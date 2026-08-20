@@ -4,18 +4,24 @@
 class Client
 {
 private:
-    int _client_fd;
-    sockaddr_in _client_addr;
+    int         _fd;
     std::string _requestBuffer;
+    std::string _responseBuffer;
+    size_t      _responseOffset;
+    bool        _responseReady;
+
 public:
-    Client();
-    ~Client();
+                        ~Client();
+                        Client(int client_fd);
+    int                 get_fd() const;
+    void                appendRequest(const char *buffer, int total_bytes);
+    void                appendResponse(const char *buffer, int total_bytes);
+    const std::string&  getResponseBuffer() const;
+    void                setResponseOffset(size_t value);
+    bool                getResponseReady() const ;
+    void                setResponseReady(bool flag);
+    size_t              getResponseOffset() const;
+
+
+    void              mirror(); //apagar dps
 };
-
-Client::Client(/* args */)
-{
-}
-
-Client::~Client()
-{
-}

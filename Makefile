@@ -10,7 +10,7 @@ INCDIR		= includes/
 
 # ================================= FILES =================================== #
 
-SRC_FILES	= main.cpp
+SRC_FILES	= main.cpp Client.cpp Server.cpp
 
 
 SRC = $(addprefix $(SRCDIR), $(SRC_FILES))
