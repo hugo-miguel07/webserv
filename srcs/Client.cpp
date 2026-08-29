@@ -2,11 +2,7 @@
 
 Client::Client(int client_fd) : _fd(client_fd), _responseOffset(0), _responseReady(false) {}
 
-Client::~Client() 
-{
-//     if (this->_fd != -1)
-//         close(this->_fd);
-}
+Client::~Client() {}
 
 int Client::get_fd() const { return (this->_fd); }
 
