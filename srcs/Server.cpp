@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "Client.hpp"
+#include "../includes/Request.hpp"
 
 Server::Server(int port) : _server_fd(-1), _port(port) {}
 
@@ -129,6 +130,7 @@ void Server::removeClients()
 void Server::handleRead(Client &client)
 {
     char buffer[4096];
+    Request req;
 
     ssize_t bytes = recv(client.get_fd(), buffer, sizeof(buffer), 0);
     if (bytes > 0)
@@ -136,6 +138,18 @@ void Server::handleRead(Client &client)
         client.appendRequest(buffer, bytes);
         client.mirror();
         client.setResponseReady(true);
+
+        /*==============================Request complete & RequestParser======================*/
+        if (req.checkHeader(client.getRequestBuffer()))
+        {
+            req.readingBody(client.getRequestBuffer());
+            if (!req.checkBody(client.getRequestBuffer()))
+            {
+                std::cout << "Request not complete" << std::endl;
+            }
+            std::cout << "Request complete" << std::endl;
+        }
+
         std::cout << bytes << "bytes received\n";
     }
     else if (bytes == 0)
