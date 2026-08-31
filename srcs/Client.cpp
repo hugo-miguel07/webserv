@@ -53,9 +53,5 @@ void Client::setResponseReady(bool flag)
     _responseReady = flag;
 }
 
-void Client::mirror()
-{
-    _responseBuffer = _requestBuffer;
-}
 
 

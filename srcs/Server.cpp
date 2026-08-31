@@ -144,9 +144,7 @@ void Server::handleRead(Client &client)
     if (bytes > 0)
     {
         client.appendRequest(buffer, bytes);
-        client.mirror();
 
-        
         /*==============================Request complete & RequestParser======================*/
         header_status = req.checkHeader(client.getRequestBuffer());
 
