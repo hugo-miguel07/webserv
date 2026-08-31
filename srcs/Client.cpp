@@ -1,5 +1,5 @@
-#include "Client.hpp"
-#include "../includes/http_parser.hpp"
+#include "../includes/Client.hpp"
+#include "../includes/Request.hpp"
 
 Client::Client(){}
 

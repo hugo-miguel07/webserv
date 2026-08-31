@@ -19,7 +19,7 @@ int main(int argc, char **argv)
     Config config;
 
     if (!config.parse(argv[1]))
-        return (std::cout << "Parser failed!\n", 0);
+         return (std::cout << "Parser failed!\n", 0);
 
     // signal(SIGINT, sig_handler);
     // Server server(8080);
@@ -28,6 +28,7 @@ int main(int argc, char **argv)
     //     return (-1);
     // server.run();
     // server.shut_down();
+
 }
 
 //testing command:

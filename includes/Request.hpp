@@ -14,16 +14,19 @@ class Request: public Client {
     private:
         std::string _TransferMethod;
         int     _nextRequestBytes;
-        int     _contentLen;
+        size_t  _contentLen;
         bool    _finisedHeader;
         bool    _hasContent;
         bool    _hasTransferEncoding;
     public:
         Request();
         ~Request();
+        bool    getHasContentStatus();
+        bool    getTransferEncodingStatus();
         bool    checkHeader(const std::string requestBuffer);
         void    readingBody(const std::string requestBuffer);
-        bool    checkBody(const std::string requestBuffer);
+        bool    checkingBody_framing(const std::string requestBuffer);
+        bool    checkingBody_chuncked(const std::string requestBuffer);
 };
 
 
