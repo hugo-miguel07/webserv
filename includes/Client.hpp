@@ -26,6 +26,4 @@ public:
 
     bool                requestComplete();
 
-
-    void              mirror(); //apagar dps
 };
