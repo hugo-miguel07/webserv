@@ -89,6 +89,20 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<std::string>& token
                 serv.setPort(port);
             }
         }
+        if ((tokens[i] == "client_max_body_size") && (i + 1 < tokens.size()))
+        {
+            ++i;
+            int bodySize = atoi(tokens[i].c_str());
+            //VERIFICAR A QUANTIDADE DPS DO NUMERO;
+            if (bodySize < 1)
+            {
+                std::cout << "Error\nInvalid bodySize";
+            }
+            else
+            {
+                serv.setBodySize(bodySize);
+            }
+        }
         if (tokens[i] == "server_name")
         {
             ++i;
@@ -106,7 +120,11 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<std::string>& token
         if ((tokens[i] == "index") && (i + 1 < tokens.size()))
         {
             ++i;
-            serv.setIndex(tokens[i]);
+            while (tokens[i] != ";" && i < tokens.size())
+            {
+                serv.setIndex(tokens[i]);
+                i++;
+            }
         }
         i++;
     }
@@ -114,11 +132,14 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<std::string>& token
     //PARSING DEBUG
     std::cout << "Port: " << serv.getPort() << "\n";
     std::vector<std::string> names = serv.getServerName();
+    std::vector<std::string> indexes = serv.getIndex();
     std::cout << "Server names:\n";
     for (size_t k = 0; k < names.size(); k++)
         std::cout << names[k] << "\n";
     std::cout << "root: " << serv.getRoot() << "\n";
-    std::cout << "index: " << serv.getIndex() << "\n";
+    std::cout << "Server indexes:\n";
+    for (size_t k = 0; k < indexes.size(); k++)
+        std::cout << indexes[k] << "\n";
     //
     return (serv);
 }

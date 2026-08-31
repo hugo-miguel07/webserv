@@ -1,6 +1,6 @@
 #include "ServerConfig.hpp"
 
-ServerConfig::ServerConfig() : _port(-1), _maxBodySize(0), _root(""), _host(""), _index(""), _serverNames(), _locations()  {}
+ServerConfig::ServerConfig() : _port(-1), _maxBodySize(0), _root(""), _host(""), _indexes(), _serverNames(), _locations()  {}
 
 ServerConfig::~ServerConfig() {}
 
@@ -22,7 +22,7 @@ void ServerConfig::setHost(const std::string &host)
 
 void ServerConfig::setIndex(const std::string &index)
 {
-    _index = index;
+    _indexes.push_back(index);
 }
 
 void ServerConfig::setRoot(const std::string &root)
@@ -47,9 +47,9 @@ std::string ServerConfig::getRoot() const
 {
     return (_root);
 }
-std::string ServerConfig::getIndex() const
+std::vector<std::string> ServerConfig::getIndex() const
 {
-    return (_index);
+    return (_indexes);
 }
 std::string ServerConfig::getHost() const
 {
