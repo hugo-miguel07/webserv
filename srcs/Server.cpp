@@ -156,8 +156,10 @@ void Server::handleRead(Client &client)
             req.readingBody(client.getRequestBuffer());
 
             if (req.checkingBody_framing(client.getRequestBuffer()))
+            {
                 std::cout << "Framing complete" << std::endl;
-                /*parser*/
+                req.start_parsing(client.getRequestBuffer());
+            }
             else
                 std::cout << "Framing not complete" << std::endl;
         }
@@ -166,16 +168,20 @@ void Server::handleRead(Client &client)
             req.readingBody(client.getRequestBuffer());
 
             if (req.checkingBody_chuncked(client.getRequestBuffer()))
+            {
                 std::cout << "Chuncked complete" << std::endl;
-                /*parser*/
+                req.start_parsing(client.getRequestBuffer());
+            }
             else
                 std::cout << "Chuncked not complete" << std::endl;
         }
         else if (!header_status)
             std::cout << "Request not complete" << std::endl;
         else
+        {
             std::cout << "Request (no body) complete" << std::endl;
-            /*parser*/
+            req.start_parsing(client.getRequestBuffer());
+        }
         /*==============================================================================*/
         std::cout << bytes << "bytes received\n";
     }

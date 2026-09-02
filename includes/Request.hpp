@@ -13,21 +13,36 @@
 class Request: public Client {
     private:
         std::string _TransferMethod;
-        int     _nextRequestBytes;
-        size_t  _contentLen;
-        bool    _finisedHeader;
-        bool    _hasContent;
-        bool    _hasTransferEncoding;
+        int         _nextRequestBytes;
+        size_t      _contentLen;
+        bool        _finisedHeader;
+        bool        _hasContent;
+        bool        _hasTransferEncoding;
+        std::map<std::string, std::string> _requestLine;
+        std::map<std::string, std::string> _headers;
     public:
         Request();
         ~Request();
         bool    getHasContentStatus();
         bool    getTransferEncodingStatus();
+
+        /*Checkers*/
         bool    checkHeader(const std::string requestBuffer);
         void    readingBody(const std::string requestBuffer);
         bool    checkingBody_framing(const std::string requestBuffer);
         bool    checkingBody_chuncked(const std::string requestBuffer);
+
+        /*Parsing*/
+        void    start_parsing(const std::string requestBuffer);
+        void    QueryParsing(std::string requestTarget);
+        void    RequestLineParsing(const std::string requestBuffer);
+        void    MethodParsing(std::string method);
+        void    HeadersToMap(const std::string requestBuffer);
+        //void    BodyParsing(const std::string requestBuffer);
+        void    HostParsing();
 };
+
+std::string trim(const std::string &str);
 
 
 #endif

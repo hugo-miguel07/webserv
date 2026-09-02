@@ -27,8 +27,10 @@ void testRequest(const std::string &name, const std::string &buffer)
         {
             req.readingBody(buffer);
 
-            if (req.checkingBody_framing(buffer))
+            if (req.checkingBody_framing(buffer)){
                 std::cout << "Framing complete" << std::endl;
+                req.start_parsing(buffer);
+            }
             else
                 std::cout << "Framing not complete" << std::endl;
         }
@@ -36,15 +38,20 @@ void testRequest(const std::string &name, const std::string &buffer)
         {
             req.readingBody(buffer);
 
-            if (req.checkingBody_chuncked(buffer))
+            if (req.checkingBody_chuncked(buffer)){
                 std::cout << "Chuncked complete" << std::endl;
+                req.start_parsing(buffer);
+            }
             else 
                 std::cout << "Chuncked not complete" << std::endl;
         }
-        else if (!header_status)
+        else if (!header_status){
             std::cout << "Request not complete" << std::endl;
-        else
+        }
+        else{
             std::cout << "Request (no body) complete" << std::endl;
+            req.start_parsing(buffer);
+        }
     }
     catch (const std::exception &e)
     {
@@ -74,7 +81,7 @@ int main()
         "hello";
 
     std::string chunked_complete =
-        "POST /upload HTTP/1.1\r\n"
+        "POST /upload/ola.html HTTP/1.1\r\n"
         "Host: localhost\r\n"
         "Transfer-Encoding: chunked\r\n"
         "\r\n"
