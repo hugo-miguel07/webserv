@@ -6,6 +6,11 @@ Client::~Client() {}
 
 int Client::get_fd() const { return (this->_fd); }
 
+const std::string& Client::getRequestBuffer() const
+{
+    return (_requestBuffer);
+}
+
 void Client::appendRequest(const char *buffer, int total_bytes)
 {
     if (!buffer)

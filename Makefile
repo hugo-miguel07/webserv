@@ -10,7 +10,9 @@ INCDIR		= includes/
 
 # ================================= FILES =================================== #
 
-SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp
+SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp \
+			  Handler.cpp Request.cpp Response.cpp StaticHandler.cpp UploadHandler.cpp \
+			  DeleteHandler.cpp DirectoryListingHandler.cpp RedirectHandler.cpp CGIHandler.cpp
 
 
 SRC = $(addprefix $(SRCDIR), $(SRC_FILES))

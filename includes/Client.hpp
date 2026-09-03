@@ -14,6 +14,7 @@ public:
                         ~Client();
                         Client(int client_fd);
     int                 get_fd() const;
+    const std::string&  getRequestBuffer() const;
     void                appendRequest(const char *buffer, int total_bytes);
     void                appendResponse(const char *buffer, int total_bytes);
     const std::string&  getResponseBuffer() const;
