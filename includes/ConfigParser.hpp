@@ -14,6 +14,12 @@ public:
     std::vector<ServerConfig> parseServers(const std::vector<std::string>& tokens);
     ServerConfig              parseServerInfo(const std::vector<std::string>& tokens, size_t &i);
 
+    
+    size_t parseBodySizeWeight(const std::string& str);
+    void   handle_location(const std::vector<std::string> &tokens, size_t &i);
+
+
+
 };
 
 

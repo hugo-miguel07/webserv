@@ -35,8 +35,10 @@ bool ConfigFile::read_and_append(const std::string& filename)
         file_input.append(buffer, static_cast<size_t>(bytes));
     }
     close(_fd);
+
     this->_inputText = file_input;
-    std::cout << this->_inputText << "\n";
+    // CONFIG FILE PRINTING DEBUG
+    // std::cout << this->_inputText << "\n";
     return (true);
 }
 
