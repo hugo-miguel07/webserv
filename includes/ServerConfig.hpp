@@ -8,7 +8,7 @@ private:
     std::string _root;
     std::string _host; //HOST?????????
     std::string _index;
-    std::vector<std::string> _serverNames;
+    std::vector<std::string> _serverNames; //iterar server names
     std::vector<Locations> _locations;
 public:
     ServerConfig();

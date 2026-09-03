@@ -310,6 +310,9 @@ void    Request::HostParsing()
 void    Request::MethodParsing(std::string method)
 {
     std::cout << method << std::endl;
+
+
+    /*verifcar no aloowed methods*/
     if (method != "GET" && method != "POST" && method != "DELETE")
         throw std::runtime_error("Invalid http method");
 }

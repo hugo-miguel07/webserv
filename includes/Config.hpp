@@ -6,7 +6,7 @@
 class Config
 {
 private:
-    std::vector<ServerConfig> _servers;
+    std::vector<ServerConfig> _servers; //iteratar ate enconatra server name
 public:
     Config();
     ~Config();
