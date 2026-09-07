@@ -19,7 +19,7 @@ public:
     std::string                 getHost() const;
     std::string                 getIndex() const;
     int                         getBodySize() const;
-    std::vector<std::string>    getServerName() const; //?????
+    std::vector<std::string>    getServerName() const; //????? deixa estar
 
     void setPort(const int& port);
     void setBodySize(const int& bodySize);

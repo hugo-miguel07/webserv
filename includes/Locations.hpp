@@ -8,6 +8,8 @@ private:
 public:
     Locations(/* args */);
     ~Locations();
+
+    std::vector<std::string> getAllowedMethods();
 };
 
 

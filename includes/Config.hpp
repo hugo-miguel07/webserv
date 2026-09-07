@@ -11,6 +11,8 @@ public:
     Config();
     ~Config();
     bool parse(const std::string &filename);
+
+    std::vector<ServerConfig> getServers();
 };
 
 

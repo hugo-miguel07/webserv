@@ -1,4 +1,6 @@
 #include "../includes/Request.hpp"
+#include "../includes/Locations.hpp"
+#include "../includes/Config.hpp"
 
 Request::Request() : Client(), _TransferMethod(""), 
             _nextRequestBytes(0), 
@@ -169,7 +171,7 @@ void    Request::start_parsing(const std::string requestbuffer)
     //std::cout << "About to parse" << std::endl; 
     RequestLineParsing(requestbuffer);
     HeadersToMap(requestbuffer);
-    //BodyParsing(requestbuffer);
+    parseBody(requestbuffer);
 
     for (std::map<std::string, std::string>::iterator it = _requestLine.begin(); it != _requestLine.end(); it++){
         std::cout << it->first << ":" << it->second << std::endl;
@@ -180,7 +182,7 @@ void    Request::start_parsing(const std::string requestbuffer)
         std::cout << it->first << ":" << it->second << std::endl;
     }
 
-    std::cout << "Parsing done" << std::endl; 
+    std::cout << "Parsing done" << std::endl;
 }
 
 void    Request::RequestLineParsing(const std::string request)
@@ -275,6 +277,7 @@ void    Request::HeadersToMap(const std::string request)
 {
     std::istringstream stream(request);
     std::string line;
+    bool found_host = false;
 
     std::getline(stream, line);
 
@@ -289,30 +292,116 @@ void    Request::HeadersToMap(const std::string request)
 
         std::string key = line.substr(0, colon);
 
+        
         if (key.empty())
-            throw std::runtime_error("Invalid header name");
-
+        throw std::runtime_error("Invalid header name");
+    
         std::string value = line.substr(colon + 1);
+
+        if (key == "Host" || key == "host" || key == "HOST")
+        {
+            found_host = true;
+            HostParsing(value);
+        }
 
         value = trim(value);
 
         _headers.insert(std::make_pair(key, value));
     }
-    //HostParsing();
 
+    if (!found_host)
+        throw std::runtime_error("No host");
 }
 
-void    Request::HostParsing()
+void Request::HostParsing(std::string value)
 {
-     
+    value = trim(value);
+
+    std::vector<ServerConfig> servers = Config::getServers();
+
+    for (size_t server = 0; server < servers.size(); ++server)
+    {
+        std::vector<std::string> names = servers[server].getServerName();
+
+        for (size_t name = 0; name < names.size(); ++name)
+        {
+            if (value == names[name])
+                return;
+        }
+    }
+
+    throw std::runtime_error("Invalid host");
+}
+
+void Request::parseBody(const std::string& buffer)
+{
+    size_t header_end = buffer.find("\r\n\r\n");
+
+    if (header_end == std::string::npos)
+        throw std::runtime_error("Invalid body");
+
+    size_t body_start = header_end + 4;
+
+    if (_hasContent)
+    {
+        _body = buffer.substr(body_start, _contentLen);
+    }
+    else if (_hasTransferEncoding)
+    {
+        parseChunkedBody(buffer, body_start);
+    }
+    else
+        _body.clear();
+    return ;
 }
 
 void    Request::MethodParsing(std::string method)
 {
     std::cout << method << std::endl;
 
+    std::vector<std::string> allowed_methods = Locations::getAllowedMethods();
 
-    /*verifcar no aloowed methods*/
-    if (method != "GET" && method != "POST" && method != "DELETE")
-        throw std::runtime_error("Invalid http method");
+    for (size_t i = 0; i < allowed_methods.size(); i++){
+        if (method == allowed_methods[i])
+            return;
+    }
+
+    throw std::runtime_error("Method not allowed");
+}
+
+void Request::parseChunkedBody(const std::string& buffer, size_t pos)
+{
+    _body.clear();
+
+    while (true)
+    {
+        size_t end = buffer.find("\r\n", pos);
+
+        if (end == std::string::npos)
+            throw std::runtime_error("Invalid chunk");
+
+        std::string size_str = buffer.substr(pos, end - pos);
+
+        unsigned long chunk_size;
+        std::istringstream stream(size_str);
+
+        stream >> std::hex >> chunk_size;
+
+        if (stream.fail())
+            throw std::runtime_error("Invalid chunk size");
+
+        pos = end + 2;
+
+        if (chunk_size == 0)
+            break;
+
+        _body.append(buffer, pos, chunk_size);
+
+        pos += chunk_size;
+
+        if (buffer.substr(pos, 2) != "\r\n")
+            throw std::runtime_error("Invalid chunk");
+
+        pos += 2;
+    }
 }
