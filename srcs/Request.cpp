@@ -9,6 +9,15 @@ Request::Request() : Client(), _TransferMethod(""),
             _hasContent(false), 
             _hasTransferEncoding(false){}
 
+
+Request::Request(std::vector<ServerConfig>   parsedServers) : Client(), _TransferMethod(""),
+            _parsedServers(parsedServers),
+            _nextRequestBytes(0), 
+            _contentLen(0), 
+            _finisedHeader(false), 
+            _hasContent(false), 
+            _hasTransferEncoding(false){}
+
 Request::~Request(){}
 
 bool    Request::getHasContentStatus(){
@@ -316,9 +325,8 @@ void    Request::HeadersToMap(const std::string request)
 void Request::HostParsing(std::string value)
 {
     value = trim(value);
-    Config conf;
 
-    std::vector<ServerConfig> servers = conf.getServers();
+    std::vector<ServerConfig> servers = _parsedServers;
 
     for (size_t server = 0; server < servers.size(); ++server)
     {
@@ -359,7 +367,8 @@ void Request::parseBody(const std::string& buffer)
 void    Request::MethodParsing(std::string method)
 {
     std::cout << method << std::endl;
-    Locations loc;
+    
+
 
     std::vector<std::string> allowed_methods = loc.getAllowedMethods();
 

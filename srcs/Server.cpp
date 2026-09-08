@@ -137,8 +137,9 @@ void Server::removeClients()
 void Server::handleRead(Client &client)
 {
     char buffer[4096];
-    Request req;
+    Request req(this->_parsedServers)
     bool    header_status;
+
 
     ssize_t bytes = recv(client.get_fd(), buffer, sizeof(buffer), 0);
     if (bytes > 0)

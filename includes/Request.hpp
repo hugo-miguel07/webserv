@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "ServerConfig.hpp"
 #include "Client.hpp"
 
 class Request: public Client {
@@ -22,8 +23,12 @@ class Request: public Client {
         std::string                         _body;
         std::map<std::string, std::string>  _requestLine;
         std::map<std::string, std::string>  _headers;
+
+        td::vector<ServerConfig>   _parsedServers;
+        
     public:
         Request();
+        Request(std::vector<ServerConfig> parsed_server);
         ~Request();
         bool    getHasContentStatus();
         bool    getTransferEncodingStatus();
