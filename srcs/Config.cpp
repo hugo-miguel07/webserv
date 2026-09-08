@@ -16,3 +16,7 @@ bool Config::parse(const std::string& filename)
 
     return (true);
 }
+
+std::vector<ServerConfig> getServers(){
+    return _servers;
+}

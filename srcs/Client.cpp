@@ -1,4 +1,7 @@
-#include "Client.hpp"
+#include "../includes/Client.hpp"
+#include "../includes/Request.hpp"
+
+Client::Client(){}
 
 Client::Client(int client_fd) : _fd(client_fd), _responseOffset(0), _responseReady(false) {}
 
@@ -25,6 +28,11 @@ const std::string& Client::getResponseBuffer() const
     return (_responseBuffer);
 }
 
+const std::string& Client::getRequestBuffer() const
+{
+    return (_requestBuffer);
+}
+
 size_t Client::getResponseOffset() const
 {
     return (_responseOffset);
@@ -45,7 +53,5 @@ void Client::setResponseReady(bool flag)
     _responseReady = flag;
 }
 
-void Client::mirror()
-{
-    _responseBuffer = _requestBuffer;
-}
+
+

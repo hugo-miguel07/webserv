@@ -50,4 +50,9 @@ void Locations::setAllowedMethod(const std::string& method)
     if (method.empty())
         return ;
     _allowed_methods.push_back(method);
+
+}
+
+std::vector<std::string> Locations::getAllowedMethods(){
+    return _allowed_methods
 }

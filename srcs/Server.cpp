@@ -1,5 +1,6 @@
 #include "Server.hpp"
 #include "Client.hpp"
+#include "../includes/Request.hpp"
 
 Server::Server(int port) : _server_fd(-1), _port(port) {}
 
@@ -86,7 +87,14 @@ void Server::run()
                 {
                     Client *client = getClientById(_pollfds[i].fd);
                     if (client)
-                        Server::handleRead(*client);
+                    {
+                        try{
+                            Server::handleRead(*client);
+                        }
+                        catch (const std::exception &e) {
+                            std::cerr << "Exception: " << e.what() << std::endl;
+                        }
+                    }
                 }
             }
             if (_pollfds[i].revents & POLLOUT)
@@ -129,13 +137,52 @@ void Server::removeClients()
 void Server::handleRead(Client &client)
 {
     char buffer[4096];
+    Request req;
+    bool    header_status;
 
     ssize_t bytes = recv(client.get_fd(), buffer, sizeof(buffer), 0);
     if (bytes > 0)
     {
         client.appendRequest(buffer, bytes);
-        client.mirror();
-        client.setResponseReady(true);
+
+        /*==============================Request complete & RequestParser======================*/
+        header_status = req.checkHeader(client.getRequestBuffer());
+
+        if (req.getHasContentStatus() && req.getTransferEncodingStatus())
+            throw std::runtime_error("Invalid request format");
+    
+        if (header_status && req.getHasContentStatus())
+        {
+            req.readingBody(client.getRequestBuffer());
+
+            if (req.checkingBody_framing(client.getRequestBuffer()))
+            {
+                std::cout << "Framing complete" << std::endl;
+                req.start_parsing(client.getRequestBuffer());
+            }
+            else
+                std::cout << "Framing not complete" << std::endl;
+        }
+        else if (header_status && req.getTransferEncodingStatus())
+        {
+            req.readingBody(client.getRequestBuffer());
+
+            if (req.checkingBody_chuncked(client.getRequestBuffer()))
+            {
+                std::cout << "Chuncked complete" << std::endl;
+                req.start_parsing(client.getRequestBuffer());
+            }
+            else
+                std::cout << "Chuncked not complete" << std::endl;
+        }
+        else if (!header_status)
+            std::cout << "Request not complete" << std::endl;
+        else
+        {
+            std::cout << "Request (no body) complete" << std::endl;
+            req.start_parsing(client.getRequestBuffer());
+        }
+        /*==============================================================================*/
         std::cout << bytes << "bytes received\n";
     }
     else if (bytes == 0)
