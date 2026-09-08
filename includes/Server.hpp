@@ -2,6 +2,7 @@
 
 #include "test.hpp"
 #include "Client.hpp"
+#include "Config.hpp"
 
 class Server
 {
@@ -12,8 +13,9 @@ private:
     std::vector<struct pollfd>  _pollfds;
     std::vector<Client>         _removeClients;
 
+    std::vector<ServerConfig>   _parsedServers;
 public:
-    Server(int port);
+    Server(Config config);
     ~Server();
 
     bool        init();

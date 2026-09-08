@@ -2,3 +2,8 @@ port: 8080aaaa is valid?
 index: can I have more than one index???
 max:    client_max_body_size 1,000,000,000G; //colocar limitador? 
 adicionar comentarios com "#" no configParser
+
+Locations 
+Servers
+Acabar transfer enconding
+checkar se a quantidade de bytes e maior doq indicado 

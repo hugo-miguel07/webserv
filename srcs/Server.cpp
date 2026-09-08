@@ -1,8 +1,8 @@
 #include "Server.hpp"
 #include "Client.hpp"
-#include "../includes/Request.hpp"
+#include "Request.hpp"
 
-Server::Server(int port) : _server_fd(-1), _port(port) {}
+Server::Server(Config config) : _server_fd(-1), _port(config.getServers().at(0).getPort()), _parsedServers(config.getServers()) {} //CHECAR ISSO DPS
 
 Server::~Server() { this->shut_down(); }
 

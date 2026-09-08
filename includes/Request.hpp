@@ -40,7 +40,7 @@ class Request: public Client {
         void    RequestLineParsing(const std::string requestBuffer);
         void    MethodParsing(std::string method);
         void    HeadersToMap(const std::string requestBuffer);
-        void    parseBody(const std::string& buffer)
+        void    parseBody(const std::string& buffer);
         void    HostParsing(std::string value);
         void    parseChunkedBody(const std::string& buffer, size_t pos);
 };

@@ -229,7 +229,7 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<std::string>& token
         i++;
     }
 
-    //PARSING DEBUG
+    // PARSING DEBUG
     // std::cout << "Port: " << serv.getPort() << "\n";
     // std::vector<std::string> names = serv.getServerName();
     // std::vector<std::string> indexes = serv.getIndex();
@@ -245,7 +245,7 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<std::string>& token
     // std::cout << "Error Pages:\n";
     // for (std::map<int, std::string>::iterator it = errorPages.begin(); it != errorPages.end(); ++it)
     //     std::cout << it->first << " = " << it->second << std::endl;
-    //
+    
     return (serv);
 }
 

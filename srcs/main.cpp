@@ -22,7 +22,7 @@ int main(int argc, char **argv)
          return (std::cout << "Parser failed!\n", 0);
 
     signal(SIGINT, sig_handler);
-    Server server(8080);
+    Server server(config);
 
     if (!server.init())
          return (-1);

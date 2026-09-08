@@ -1,6 +1,6 @@
-#include "../includes/Request.hpp"
-#include "../includes/Locations.hpp"
-#include "../includes/Config.hpp"
+#include "Request.hpp"
+#include "Locations.hpp"
+#include "Config.hpp"
 
 Request::Request() : Client(), _TransferMethod(""), 
             _nextRequestBytes(0), 
@@ -127,7 +127,7 @@ bool Request::checkingBody_chuncked(const std::string buffer)
     body_start += header_end.size();
     /*=======================*/
 
-    //std::cout << "Transfer method: " << _TransferMethod << std::endl;
+    std::cout << "Transfer method: " << _TransferMethod << std::endl;
     while (true)
     {
         size_t end = buffer.find("\r\n", body_start);
@@ -316,8 +316,9 @@ void    Request::HeadersToMap(const std::string request)
 void Request::HostParsing(std::string value)
 {
     value = trim(value);
+    Config conf;
 
-    std::vector<ServerConfig> servers = Config::getServers();
+    std::vector<ServerConfig> servers = conf.getServers();
 
     for (size_t server = 0; server < servers.size(); ++server)
     {
@@ -358,8 +359,9 @@ void Request::parseBody(const std::string& buffer)
 void    Request::MethodParsing(std::string method)
 {
     std::cout << method << std::endl;
+    Locations loc;
 
-    std::vector<std::string> allowed_methods = Locations::getAllowedMethods();
+    std::vector<std::string> allowed_methods = loc.getAllowedMethods();
 
     for (size_t i = 0; i < allowed_methods.size(); i++){
         if (method == allowed_methods[i])
