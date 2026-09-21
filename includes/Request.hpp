@@ -21,10 +21,12 @@ class Request: public Client {
         bool                                _hasContent;
         bool                                _hasTransferEncoding;
         std::string                         _body;
+        ServerConfig                        _server;
+        std::string                         _serverName;
         std::map<std::string, std::string>  _requestLine;
         std::map<std::string, std::string>  _headers;
 
-        td::vector<ServerConfig>   _parsedServers;
+        std::vector<ServerConfig>   _parsedServers;
         
     public:
         Request();
@@ -51,6 +53,26 @@ class Request: public Client {
 };
 
 std::string trim(const std::string &str);
+
+RequestLineParsing: estruturalmente OK.
+
+QueryParsing: quase OK; query vazia não precisa necessariamente de erro.
+
+HeadersToMap: funciona, mas precisas de normalizar nomes dos headers e tratar duplicados.
+
+HostParsing: estruturalmente correto; só move o parsing da porta para fora dos loops.
+seleção de ServerConfig: correta.
+
+MethodParsing: falta escolher o longest matching Location.
+readingBody: funcional, mas estás a fazer parsing duas vezes; usa _headers.
+
+Content-Length + Transfer-Encoding: falta rejeitar conflito.
+checkingBody_framing: ideia correta.
+
+checkingBody_chuncked: precisa de validação mais forte do chunk size.
+
+parseBody: correto se só for chamado quando a request estiver completa.
+
 
 
 #endif

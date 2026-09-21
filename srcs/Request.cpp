@@ -180,6 +180,8 @@ void    Request::start_parsing(const std::string requestbuffer)
     //std::cout << "About to parse" << std::endl; 
     RequestLineParsing(requestbuffer);
     HeadersToMap(requestbuffer);
+    MethodParsing(_requestLine["Method"]);
+    readingBody(requestbuffer);
     parseBody(requestbuffer);
 
     for (std::map<std::string, std::string>::iterator it = _requestLine.begin(); it != _requestLine.end(); it++){
@@ -219,7 +221,6 @@ void    Request::RequestLineParsing(const std::string request)
     if (method != "GET" && method != "POST" && method != "DELETE")
         throw std::runtime_error("Invalid method");
     
-    MethodParsing(method);
     _requestLine.insert(std::make_pair("Method", method));
 
     /*================Request target===============*/
@@ -253,6 +254,8 @@ void    Request::RequestLineParsing(const std::string request)
         throw std::runtime_error("Invalid HTTP version");
 
     _requestLine.insert(std::make_pair("Version", version));
+
+    request_target = trim(request_target);
 
     if (hasQuery == true)
         QueryParsing(request_target);
@@ -322,9 +325,9 @@ void    Request::HeadersToMap(const std::string request)
         throw std::runtime_error("No host");
 }
 
-void Request::HostParsing(std::string value)
+void Request::HostParsing(std::string host)
 {
-    value = trim(value);
+    host = trim(host);
 
     std::vector<ServerConfig> servers = _parsedServers;
 
@@ -332,10 +335,19 @@ void Request::HostParsing(std::string value)
     {
         std::vector<std::string> names = servers[server].getServerName();
 
-        for (size_t name = 0; name < names.size(); ++name)
+        for (size_t i = 0; i < names.size(); ++i)
         {
-            if (value == names[name])
+            std::string value = names[i];
+
+            size_t colon = host.find(':');
+            if (colon != std::string::npos)
+                host = host.substr(0, colon);
+        
+            if (host == value){
+                _server = servers[server];
+                _serverName = value;
                 return;
+            }
         }
     }
 
@@ -364,20 +376,31 @@ void Request::parseBody(const std::string& buffer)
     return ;
 }
 
-void    Request::MethodParsing(std::string method)
+void Request::MethodParsing(std::string method)
 {
-    std::cout << method << std::endl;
-    
+    std::string path = _requestLine["Path"];
 
+    std::vector<Locations> locations =
+        _server.getLocations();
 
-    std::vector<std::string> allowed_methods = loc.getAllowedMethods();
+    for (size_t i = 0; i < locations.size(); ++i)
+    {
+        if (path.find(locations[i].getPath()) == 0)
+        {
+            std::vector<std::string> allowed_methods =
+                locations[i].getAllowedMethods();
 
-    for (size_t i = 0; i < allowed_methods.size(); i++){
-        if (method == allowed_methods[i])
-            return;
+            for (size_t j = 0; j < allowed_methods.size(); ++j)
+            {
+                if (method == allowed_methods[j])
+                    return;
+            }
+
+            throw std::runtime_error("Method not allowed");
+        }
     }
 
-    throw std::runtime_error("Method not allowed");
+    throw std::runtime_error("Location not found");
 }
 
 void Request::parseChunkedBody(const std::string& buffer, size_t pos)

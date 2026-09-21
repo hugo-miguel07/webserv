@@ -137,7 +137,7 @@ void Server::removeClients()
 void Server::handleRead(Client &client)
 {
     char buffer[4096];
-    Request req(this->_parsedServers)
+    Request req(this->_parsedServers);
     bool    header_status;
 
 

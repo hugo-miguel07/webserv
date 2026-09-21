@@ -21,6 +21,7 @@ public:
     std::vector<std::string>    getIndex() const;
     std::vector<std::string>    getServerName() const;
     std::map<int, std::string>  getErrorPages() const;
+    std::vector<Locations>      getLocations() const;
 
     void setPort(const int& port);
     void setBodySize(const size_t& bodySize);

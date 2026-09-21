@@ -66,3 +66,7 @@ std::map<int, std::string> ServerConfig::getErrorPages() const
     return (_errorPages);
 }
 
+std::vector<Locations>  ServerConfig::getLocations() const{
+    return (_locations);
+}
+
