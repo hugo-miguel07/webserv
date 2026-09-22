@@ -124,19 +124,19 @@ bool Request::checkingBody_framing(const std::string buffer)
 
 bool Request::checkingBody_chuncked(const std::string buffer)
 {
-    //std::cout << "starting checking chuncks" << std::endl;
-    std::string line;
-
-    /*==============Extracting body=================*/
-
     std::string header_end = "\r\n\r\n";
 
-    size_t body_start = buffer.find("\r\n\r\n");
-    
-    body_start += header_end.size();
-    /*=======================*/
+    size_t body_start = buffer.find(header_end);
 
-    std::cout << "Transfer method: " << _TransferMethod << std::endl;
+    if (body_start == std::string::npos)
+        return false;
+
+    body_start += header_end.size();
+
+    std::cout << "Transfer method: "
+              << _TransferMethod
+              << std::endl;
+
     while (true)
     {
         size_t end = buffer.find("\r\n", body_start);
@@ -144,11 +144,19 @@ bool Request::checkingBody_chuncked(const std::string buffer)
         if (end == std::string::npos)
             return false;
 
-        std::string size_str = buffer.substr(body_start, end - body_start);
+        std::string size_str =
+            buffer.substr(body_start, end - body_start);
+
+        if (size_str.empty())
+            throw std::runtime_error("Invalid chunk size");
 
         unsigned long chunk_size;
 
-        std::istringstream(size_str) >> std::hex >> chunk_size;
+        std::istringstream stream(size_str);
+        stream >> std::hex >> chunk_size;
+
+        if (stream.fail())
+            throw std::runtime_error("Invalid chunk size");
 
         body_start = end + 2;
 
@@ -162,7 +170,7 @@ bool Request::checkingBody_chuncked(const std::string buffer)
 
             return true;
         }
-        
+
         if (buffer.size() < body_start + chunk_size + 2)
             return false;
 
