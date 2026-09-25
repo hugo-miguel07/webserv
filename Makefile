@@ -10,7 +10,7 @@ INCDIR		= includes/
 
 # ================================= FILES =================================== #
 
-SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp Request.cpp trim.cpp
+SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp Request.cpp trim.cpp Tokenize.cpp
 
 
 SRC = $(addprefix $(SRCDIR), $(SRC_FILES))
@@ -76,7 +76,7 @@ r: reclear
 	@./$(NAME)
 
 v: reclear
-	valgrind --leak-check=full  --track-origins=yes --show-leak-kinds=all --track-fds=yes ./$(NAME)
+	valgrind --leak-check=full  --track-origins=yes --show-leak-kinds=all --track-fds=yes ./$(NAME) configurations/config.config
 
 # ------------------------------- Phony Targets ----------------------------- #
 .PHONY: all clean fclean re

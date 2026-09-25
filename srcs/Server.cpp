@@ -2,59 +2,76 @@
 #include "Client.hpp"
 #include "Request.hpp"
 
-Server::Server(Config config) : _server_fd(-1), _port(config.getServers().at(0).getPort()), _parsedServers(config.getServers()) {} //CHECAR ISSO DPS
+Server::Server(const Config &config) : _config(config) {}
 
 Server::~Server() { this->shut_down(); }
 
 bool Server::init() 
 {
-    this->_server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (this->_server_fd == -1)
+    for (std::vector<ServerConfig>::iterator it = _config.getServers().begin(); it != _config.getServers().end(); ++it)
     {
-        std::cout << "Error on socket()" << std::endl;
-        return false;
+        int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_fd == -1)
+        {
+            std::cout << "Error on socket()" << std::endl;
+            return false;
+        }
+
+        if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
+        {
+            std::cout << "Error on fnctl()\n";
+            close(server_fd);
+            return false ;
+        }
+
+        sockaddr_in address;
+
+        address.sin_family = AF_INET;
+        address.sin_port = htons(it->getPort());
+        address.sin_addr.s_addr = htonl(INADDR_ANY);
+
+        if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) == -1)
+        {
+            close(server_fd);
+            std::cout << "Error on bind()" << std::endl;
+            return false;
+        }
+        if (listen(server_fd, SOMAXCONN) == -1)
+        {
+            close(server_fd);
+            std::cout << "Error on listen()" << std::endl;
+            return false;
+        }
+        _server_fds.push_back(server_fd);
+
+        struct pollfd pfd;
+        pfd.fd = server_fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        _pollfds.push_back(pfd);
+        std::cout << "Server initialized on port: " << it->getPort() << std::endl;
     }
-
-    if (fcntl(_server_fd, F_SETFL, O_NONBLOCK) == -1)
-    {
-        std::cout << "Error on fnctl()\n";
-        close(_server_fd);
-        return false ;
-    }
-
-    sockaddr_in address;
-    
-    address.sin_family = AF_INET;
-    address.sin_port = htons(this->_port);
-    address.sin_addr.s_addr = htonl(INADDR_ANY);
-
-    if (bind(this->_server_fd, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) == -1)
-    {
-        close(this->_server_fd);
-        std::cout << "Error on bind()" << std::endl;
-        return false;
-    }
-    if (listen(this->_server_fd, SOMAXCONN) == -1)
-    {
-        close(this->_server_fd);
-        std::cout << "Error on listen()" << std::endl;
-        return false;
-    }
-    struct pollfd pfd;
-
-    pfd.fd = _server_fd;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-
-    _pollfds.push_back(pfd);
     return (true);
+}
+
+bool Server::isServerFd(int fd)
+{
+    for (std::vector<int>::iterator it = _server_fds.begin();
+         it != _server_fds.end();
+         ++it)
+    {
+        if (*it == fd)
+            return true;
+    }
+    return false;
 }
 
 void Server::enablePollOut()
 {
     for (size_t i = 0; i < _pollfds.size(); i++)
     {
-        if (_pollfds[i].fd == _server_fd)
+        if (isServerFd(_pollfds[i].fd))
             continue;
         Client *client = getClientById(_pollfds[i].fd);
         if (client && client->getResponseReady())
@@ -81,8 +98,8 @@ void Server::run()
         {
             if (_pollfds[i].revents & POLLIN)
             {  
-                if (_pollfds[i].fd == _server_fd)
-                    Server::acceptClient();
+                if (isServerFd(_pollfds[i].fd))
+                    Server::acceptClient(_pollfds[i].fd);
                 else
                 {
                     Client *client = getClientById(_pollfds[i].fd);
@@ -108,8 +125,6 @@ void Server::run()
     }
     Server::shut_down();
 }
-
-int Server::getServerFd() const {return (this->_server_fd); }
 
 void Server::removeClients()
 {
@@ -144,6 +159,7 @@ void Server::handleRead(Client &client)
     if (bytes > 0)
     {
         client.appendRequest(buffer, bytes);
+        //
 
         /*==============================Request complete & RequestParser======================*/
         header_status = req.checkHeader(client.getRequestBuffer());
@@ -218,12 +234,12 @@ void Server::disablePollOut(int fd)
     }
 }
 
-void Server::acceptClient()
+void Server::acceptClient(int fd)
 {
     sockaddr_in client_addr;
     socklen_t   client_addr_len = sizeof(client_addr);
 
-    int client_fd = accept(this->_server_fd, reinterpret_cast<struct sockaddr *>(&client_addr), &client_addr_len);
+    int client_fd = accept(fd, reinterpret_cast<struct sockaddr *>(&client_addr), &client_addr_len);
 
     if (client_fd == -1)
     {
@@ -278,6 +294,7 @@ void Server::shut_down()
     }
     this->_pollfds.clear();
 
-    if (this->_server_fd != -1)
-        close(this->_server_fd); 
+    for (size_t i = 0; _server_fds[i]; i++)
+        if (this->_server_fds[i] != -1)
+            close(this->_server_fds[i]); 
 }

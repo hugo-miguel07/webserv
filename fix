@@ -1,9 +1,28 @@
-port: 8080aaaa is valid?
-index: can I have more than one index???
-max:    client_max_body_size 1,000,000,000G; //colocar limitador? 
-adicionar comentarios com "#" no configParser
+verificar se preciso de todas as directives validas para iniciar o server
+add syntax error
 
-Locations 
-Servers
-Acabar transfer enconding
+post without upload store is an error
+
 checkar se a quantidade de bytes e maior doq indicado 
+
+error pages supported:
+400
+403
+404
+405
+413
+500
+501
+check with Hugo afterwards if he will actually implement all of then.
+
+Aparentemente preciso ter root directive para o location / funcionarf
+
+ver se o HTTP status code do Return directive e valido
+
+ver se adicono erro especifico para quando tem mais de um argumento em uma directive que so aceita um 
+
+Na parte do Server: mudar msg the erro para exceptions
+
+One important issue in the current code: Request.cpp creates a new, unparsed Config inside HostParsing():
+
+implementar iniciacao do server com o config file

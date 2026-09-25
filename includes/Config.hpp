@@ -10,7 +10,7 @@ private:
 public:
     Config();
     ~Config();
-    bool parse(const std::string &filename);
+    void parse(const std::string &filename);
 
     std::vector<ServerConfig> getServers();
 };

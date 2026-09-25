@@ -38,6 +38,11 @@ void ServerConfig::setErrorPages(const int& key, const std::string &value)
     _errorPages.insert(std::make_pair(key, value));
 }
 
+void ServerConfig::addLocation(const Locations& location)
+{
+    _locations.push_back(location);
+}
+
 int ServerConfig::getPort() const
 {
     return (_port);
