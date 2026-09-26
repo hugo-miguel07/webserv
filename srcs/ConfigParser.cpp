@@ -28,7 +28,7 @@ bool isAllDigit(const std::string &str)
 void checkSemiColon(const std::vector<Token>& tokens, size_t i)
 {
     if (i + 1 < tokens.size() && tokens[i + 1].content != ";")
-        throw std::runtime_error("Missing ';' at line " + to_string(tokens[i].line));
+        throw std::runtime_error("Unexpected token '"+ tokens[i + 1].content +"' expecting -> ';' (Line: " + to_string(tokens[i].line)+ ")");
 }
 //////////////////////////////////
 
@@ -382,7 +382,7 @@ void ConfigParser::handleServerNameDirective(const std::vector<Token>& tokens, s
     while (tokens[i].content != ";" && i < tSize)
     {
         if (tokens[i].content == "}" || isDirective(tokens[i].content))
-            throw (std::runtime_error("Missing ';' on server_name directive (line: " + to_string(prev_line) + ")"));
+            throw (std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(prev_line) + ")"));
         _serv.setServerName(tokens[i].content);
         prev_line = tokens[i].line;
         i++;
@@ -400,13 +400,13 @@ void ConfigParser::handleIndexDirective(const std::vector<Token>& tokens, size_t
         if (is_location)
         {
             if (tokens[i].content == "}" || isLocationDirective(tokens[i].content))
-                throw (std::runtime_error("Missing ';' on index directive (line: " + to_string(prev_line) + ")"));
+                throw (std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(prev_line) + ")"));
             _loc.setIndex(tokens[i].content);
         }
         else
         {
             if (tokens[i].content == "}" || isDirective(tokens[i].content))
-                throw (std::runtime_error("Missing ';' on index directive (line: " + to_string(prev_line) + ")"));
+                throw (std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(prev_line) + ")"));
             _serv.setIndex(tokens[i].content);
         }
         prev_line = tokens[i].line;
@@ -484,12 +484,12 @@ void ConfigParser::handleAllowMethodsDirective(const std::vector<Token>& tokens,
     while (i < tSize && tokens[i].content != ";")
     {
         if (tokens[i].content == "}" || isLocationDirective(tokens[i].content))
-            throw std::runtime_error("Missing ';' on allow_methods directive (line: " + to_string(directive_line) + ")");
+            throw std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(directive_line) + ")");
         _loc.setAllowedMethod(tokens[i].content);
         i++;
     }
     if (i == tSize)
-        throw std::runtime_error("Missing ';' on allow_methods directive (line: " + to_string(directive_line) + ")");
+        throw std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(directive_line) + ")");
 }
 void ConfigParser::handleUploadStoreDirective(const std::vector<Token>& tokens, size_t& i)
 {

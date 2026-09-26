@@ -1,5 +1,7 @@
 #pragma once
 #include "test.hpp"
+#include "ServerConfig.hpp"
+#include "Listener.hpp"
 
 class Client
 {
@@ -9,12 +11,15 @@ private:
     std::string _responseBuffer;
     size_t      _responseOffset;
     bool        _responseReady;
+    Listener*   _listener;
+    const ServerConfig* _config;
 
 public:
                         Client();
                         ~Client();
-                        Client(int client_fd);
-    int                 get_fd() const;
+                        Client(int client_fd, Listener listener);
+    int                 getFd() const;
+    Listener            getListener() const;
     void                appendRequest(const char *buffer, int total_bytes);
     void                appendResponse(const char *buffer, int total_bytes);
     const std::string&  getResponseBuffer() const;
@@ -23,6 +28,7 @@ public:
     bool                getResponseReady() const ;
     void                setResponseReady(bool flag);
     size_t              getResponseOffset() const;
+    void                setConfig(const ServerConfig& config);
 
     bool                requestComplete();
 

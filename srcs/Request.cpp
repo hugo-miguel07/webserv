@@ -316,18 +316,21 @@ void    Request::HeadersToMap(const std::string request)
 void Request::HostParsing(std::string value)
 {
     value = trim(value);
-    Config conf;
 
-    std::vector<ServerConfig> servers = conf.getServers();
+    Listener listener = getListener();
 
-    for (size_t server = 0; server < servers.size(); ++server)
+    for (std::vector<ServerConfig>::iterator config_it = listener.configs.begin(); config_it != listener.configs.end(); ++config_it)
     {
-        std::vector<std::string> names = servers[server].getServerName();
+        std::vector<std::string> names = config_it->getServerName();
 
-        for (size_t name = 0; name < names.size(); ++name)
+        for (std::vector<std::string>::iterator name_it = names.begin();
+             name_it != names.end(); ++name_it)
         {
-            if (value == names[name])
+            if (*name_it == value)
+            {
+                setConfig(*config_it);
                 return;
+            }
         }
     }
 

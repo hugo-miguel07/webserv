@@ -24,6 +24,6 @@ void Config::parse(const std::string& filename)
     // }
 }
 
-std::vector<ServerConfig> Config::getServers(){
+const std::vector<ServerConfig>& Config::getServers() const {
     return (_servers);
 }

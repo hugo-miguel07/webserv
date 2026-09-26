@@ -15,14 +15,12 @@ error pages supported:
 501
 check with Hugo afterwards if he will actually implement all of then.
 
-Aparentemente preciso ter root directive para o location / funcionarf
+Aparentemente preciso ter root directive para o location / funcionar
 
 ver se o HTTP status code do Return directive e valido
-
-ver se adicono erro especifico para quando tem mais de um argumento em uma directive que so aceita um 
 
 Na parte do Server: mudar msg the erro para exceptions
 
 One important issue in the current code: Request.cpp creates a new, unparsed Config inside HostParsing():
 
-implementar iniciacao do server com o config file
+fix dangling configuration pointer on request part;

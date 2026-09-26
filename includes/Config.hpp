@@ -12,7 +12,7 @@ public:
     ~Config();
     void parse(const std::string &filename);
 
-    std::vector<ServerConfig> getServers();
+    const std::vector<ServerConfig>& getServers() const;
 };
 
 

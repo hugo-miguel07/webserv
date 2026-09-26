@@ -8,47 +8,48 @@ Server::~Server() { this->shut_down(); }
 
 bool Server::init() 
 {
-    for (std::vector<ServerConfig>::iterator it = _config.getServers().begin(); it != _config.getServers().end(); ++it)
+    const std::vector<ServerConfig>& servers = _config.getServers();
+    for (std::vector<ServerConfig>::const_iterator it = servers.begin(); it != servers.end(); ++it)
     {
+        Listener * listener = FindListener(it->getPort());
+        if (listener)
+        {
+            listener->configs.push_back(*it);
+            continue;
+        }
         int server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd == -1)
-        {
-            std::cout << "Error on socket()" << std::endl;
-            return false;
-        }
-
+            throw(std::runtime_error("Error on socket()"));
         if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
         {
-            std::cout << "Error on fnctl()\n";
             close(server_fd);
-            return false ;
+            throw(std::runtime_error("Error on fnctl()"));
         }
-
         sockaddr_in address;
-
         address.sin_family = AF_INET;
         address.sin_port = htons(it->getPort());
         address.sin_addr.s_addr = htonl(INADDR_ANY);
-
         if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) == -1)
         {
             close(server_fd);
-            std::cout << "Error on bind()" << std::endl;
-            return false;
+            throw(std::runtime_error("Error on bind()"));
         }
         if (listen(server_fd, SOMAXCONN) == -1)
         {
             close(server_fd);
-            std::cout << "Error on listen()" << std::endl;
-            return false;
+            throw(std::runtime_error("Error on listen()"));
         }
+        Listener newListener;
+        newListener.port = it->getPort();
+        newListener.fd = server_fd;
+        newListener.configs.push_back(*it);
+        _listeners.push_back(newListener);
         _server_fds.push_back(server_fd);
 
         struct pollfd pfd;
         pfd.fd = server_fd;
         pfd.events = POLLIN;
         pfd.revents = 0;
-
         _pollfds.push_back(pfd);
         std::cout << "Server initialized on port: " << it->getPort() << std::endl;
     }
@@ -57,13 +58,9 @@ bool Server::init()
 
 bool Server::isServerFd(int fd)
 {
-    for (std::vector<int>::iterator it = _server_fds.begin();
-         it != _server_fds.end();
-         ++it)
-    {
+    for (std::vector<int>::iterator it = _server_fds.begin(); it != _server_fds.end(); ++it)
         if (*it == fd)
             return true;
-    }
     return false;
 }
 
@@ -89,8 +86,11 @@ void Server::run()
         int ret = poll(_pollfds.data(), _pollfds.size(), -1);
         if (ret == -1)
         {
-            std::cout << "Error on poll()\n";
-            break ;
+            if (g_running)
+                throw (std::runtime_error("Error on poll()"));
+            else
+                throw (std::runtime_error("Process finished by SIGINT"));
+            break;
         }
 
         size_t size = _pollfds.size();
@@ -104,14 +104,7 @@ void Server::run()
                 {
                     Client *client = getClientById(_pollfds[i].fd);
                     if (client)
-                    {
-                        try{
-                            Server::handleRead(*client);
-                        }
-                        catch (const std::exception &e) {
-                            std::cerr << "Exception: " << e.what() << std::endl;
-                        }
-                    }
+                        Server::handleRead(*client);
                 }
             }
             if (_pollfds[i].revents & POLLOUT)
@@ -130,17 +123,17 @@ void Server::removeClients()
 {
     if (_removeClients.empty())
         return ;
-    for(std::vector<Client>::iterator remove_it = _removeClients.begin(); remove_it != _removeClients.end(); ++remove_it)
+    for(std::vector<int>::iterator remove_it = _removeClients.begin(); remove_it != _removeClients.end(); ++remove_it)
     {
         for(std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
-            if (it->get_fd() == remove_it->get_fd())
+            if (it->getFd() == *remove_it)
             {
-                close(it->get_fd());
+                close(it->getFd());
                 _clients.erase(it);
                 break;
             }
         for(std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
-            if (it->fd == remove_it->get_fd())
+            if (it->fd == *remove_it)
             {
                 _pollfds.erase(it);
                 break;
@@ -151,16 +144,14 @@ void Server::removeClients()
 
 void Server::handleRead(Client &client)
 {
-    char buffer[4096];
+    char    buffer[4096];
     Request req;
     bool    header_status;
 
-    ssize_t bytes = recv(client.get_fd(), buffer, sizeof(buffer), 0);
+    ssize_t bytes = recv(client.getFd(), buffer, sizeof(buffer), 0);
     if (bytes > 0)
     {
         client.appendRequest(buffer, bytes);
-        //
-
         /*==============================Request complete & RequestParser======================*/
         header_status = req.checkHeader(client.getRequestBuffer());
 
@@ -200,9 +191,20 @@ void Server::handleRead(Client &client)
         }
         /*==============================================================================*/
         std::cout << bytes << "bytes received\n";
+        for (std::vector<ServerConfig>::iterator it = client.getListener().configs.begin(); it != client.getListener().configs.end(); ++it)
+        {
+            for (std::vector<std::string>::iterator sn_it = it->getServerName().begin(); sn_it != it->getServerName().end(); ++sn_it)
+            {
+                if (*sn_it == "Host") // trocar o "host" pelo o host que e recebido no request
+                {
+                    client.setConfig(*it);
+                    break;
+                } 
+            }
+        }
     }
     else if (bytes == 0)
-        _removeClients.push_back(client.get_fd());
+        _removeClients.push_back(client.getFd());
     else
         std::cout << "Error at request reading\n";
 }
@@ -211,15 +213,12 @@ void Server::handleWrite(Client &client)
 {
     const std::string &res = client.getResponseBuffer();
     size_t offset = client.getResponseOffset();
-    ssize_t bytes = send(client.get_fd(), res.c_str() + offset, res.length() - offset, 0);
+    ssize_t bytes = send(client.getFd(), res.c_str() + offset, res.length() - offset, 0);
     if (bytes == -1)
-    {
-        std::cout << "Error on send()\n";
-        return ;
-    }
+        throw(std::runtime_error("Error on send()"));
     client.setResponseOffset(offset + bytes);
     if (client.getResponseOffset() == res.size())
-        Server::disablePollOut(client.get_fd());
+        Server::disablePollOut(client.getFd());
 }
 
 void Server::disablePollOut(int fd)
@@ -242,19 +241,24 @@ void Server::acceptClient(int fd)
     int client_fd = accept(fd, reinterpret_cast<struct sockaddr *>(&client_addr), &client_addr_len);
 
     if (client_fd == -1)
-    {
-        std::cout << "Error on accept()" << std::endl;
-        return ;    
-    }
+        throw(std::runtime_error("Error on accept()"));
 
     if (fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1)
     {
-        std::cout << "Error on fnctl()\n";
         close(client_fd);
-        return ;
+        throw(std::runtime_error("Error on fcntl()"));
+    }
+    Listener listener;
+    for (std::vector<Listener>::iterator it = _listeners.begin(); it != _listeners.end(); ++it)
+    {
+        if (it->fd == fd)
+        {
+            listener = *it;
+            break;
+        }
     }
 
-    this->_clients.push_back(Client(client_fd));
+    this->_clients.push_back(Client(client_fd, listener));
 
     struct pollfd pfd;
 
@@ -272,7 +276,17 @@ Client* Server::getClientById(int fd)
 {
     for (std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); it++)
     {
-        if (it->get_fd() == fd)
+        if (it->getFd() == fd)
+            return &(*it);
+    }
+    return (NULL);
+}
+
+Listener* Server::FindListener(int port)
+{
+    for (std::vector<Listener>::iterator it = _listeners.begin(); it != _listeners.end(); ++it)
+    {
+        if (it->port == port)
             return &(*it);
     }
     return (NULL);
@@ -282,8 +296,8 @@ void Server::shut_down()
 { 
     for (std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
-        if (it->get_fd() != -1)
-            close (it->get_fd());
+        if (it->getFd() != -1)
+            close (it->getFd());
     }
     this->_clients.clear();
     
@@ -294,7 +308,10 @@ void Server::shut_down()
     }
     this->_pollfds.clear();
 
-    for (size_t i = 0; _server_fds[i]; i++)
-        if (this->_server_fds[i] != -1)
-            close(this->_server_fds[i]); 
+    for (std::vector<int>::iterator it = _server_fds.begin(); it != _server_fds.end(); ++it)
+    {
+        if (*it != -1)
+            close(*it);
+    }
+    this->_server_fds.clear();
 }

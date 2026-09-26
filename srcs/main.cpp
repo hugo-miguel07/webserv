@@ -14,28 +14,27 @@ void sig_handler(int sig)
 int main(int argc, char **argv)
 {
     if (argc < 2)
-        return (std::cout << "Server expects a configuration file." << std::endl, 0);
+        return (std::cerr << "Server expects a configuration file." << std::endl, 0);
     else if (argc > 2)
-        return (std::cout << "Server can only handle one configuration file." << std::endl, 0);
+        return (std::cerr << "Server can only handle one configuration file." << std::endl, 0);
     Config config;
 
     try
     {
         config.parse(argv[1]);
+        signal(SIGINT, sig_handler);
+        Server server(config);
+
+        if (!server.init())
+            return (-1);
+        server.run();
+        server.shut_down();
     }
     catch(std::runtime_error& e)
     {
-        std::cout << e.what() << std::endl;
+        std::cerr << e.what() << std::endl;
+        return (0);
     }
-
-    signal(SIGINT, sig_handler);
-    Server server(config);
-
-    if (!server.init())
-         return (-1);
-    server.run();
-    server.shut_down();
-
 }
 
 //testing command:
