@@ -191,17 +191,6 @@ void Server::handleRead(Client &client)
         }
         /*==============================================================================*/
         std::cout << bytes << "bytes received\n";
-        for (std::vector<ServerConfig>::iterator it = client.getListener().configs.begin(); it != client.getListener().configs.end(); ++it)
-        {
-            for (std::vector<std::string>::iterator sn_it = it->getServerName().begin(); sn_it != it->getServerName().end(); ++sn_it)
-            {
-                if (*sn_it == "Host") // trocar o "host" pelo o host que e recebido no request
-                {
-                    client.setConfig(*it);
-                    break;
-                } 
-            }
-        }
     }
     else if (bytes == 0)
         _removeClients.push_back(client.getFd());
@@ -248,15 +237,17 @@ void Server::acceptClient(int fd)
         close(client_fd);
         throw(std::runtime_error("Error on fcntl()"));
     }
-    Listener listener;
+    Listener *listener = NULL;
     for (std::vector<Listener>::iterator it = _listeners.begin(); it != _listeners.end(); ++it)
     {
         if (it->fd == fd)
         {
-            listener = *it;
+            listener = &(*it);
             break;
         }
     }
+    if (!listener)
+        throw std::runtime_error("Listener not found");
 
     this->_clients.push_back(Client(client_fd, listener));
 

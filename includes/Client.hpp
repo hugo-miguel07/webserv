@@ -17,9 +17,9 @@ private:
 public:
                         Client();
                         ~Client();
-                        Client(int client_fd, Listener listener);
+                        Client(int client_fd, Listener *listener);
     int                 getFd() const;
-    Listener            getListener() const;
+    const Listener&     getListener() const;
     void                appendRequest(const char *buffer, int total_bytes);
     void                appendResponse(const char *buffer, int total_bytes);
     const std::string&  getResponseBuffer() const;
