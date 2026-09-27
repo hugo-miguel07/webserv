@@ -1,9 +1,9 @@
 #include "../includes/Client.hpp"
 #include "../includes/Request.hpp"
 
-Client::Client(){}
+Client::Client() : _fd(-1), _responseOffset(0), _responseReady(false), _listener(NULL), _config(NULL) {}
 
-Client::Client(int client_fd, Listener *listener) : _fd(client_fd), _responseOffset(0), _responseReady(false), _listener(listener) {}
+Client::Client(int client_fd, Listener *listener) : _fd(client_fd), _responseOffset(0), _responseReady(false), _listener(listener), _config(NULL) {}
 
 Client::~Client() {}
 
@@ -43,6 +43,11 @@ size_t Client::getResponseOffset() const
 void Client::setResponseOffset(size_t value)
 {
     _responseOffset = value;
+}
+
+const ServerConfig& Client::getConfig() const
+{
+    return (*_config);
 }
 
 bool Client::getResponseReady() const

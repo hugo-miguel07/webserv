@@ -145,7 +145,7 @@ void Server::removeClients()
 void Server::handleRead(Client &client)
 {
     char    buffer[4096];
-    Request req;
+    Request req(client);
     bool    header_status;
 
     ssize_t bytes = recv(client.getFd(), buffer, sizeof(buffer), 0);

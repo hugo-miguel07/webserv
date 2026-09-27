@@ -29,6 +29,8 @@ public:
     void                setResponseReady(bool flag);
     size_t              getResponseOffset() const;
     void                setConfig(const ServerConfig& config);
+    const ServerConfig& getConfig() const;
+
 
     bool                requestComplete();
 

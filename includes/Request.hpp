@@ -23,10 +23,11 @@ class Request: public Client {
         std::map<std::string, std::string>  _requestLine;
         std::map<std::string, std::string>  _headers;
     public:
-        Request();
+        Request(const Client& client);
         ~Request();
         bool    getHasContentStatus();
         bool    getTransferEncodingStatus();
+        size_t  getContentLength() const;
 
         /*Checkers*/
         bool    checkHeader(const std::string requestBuffer);
@@ -46,6 +47,4 @@ class Request: public Client {
 };
 
 std::string trim(const std::string &str);
-
-
 #endif
