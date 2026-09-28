@@ -25,7 +25,10 @@ void ConfigFile::read_and_append(const std::string& filename)
         if (bytes <= 0)
         {
             if (bytes < 0)
+            {
+                close(_fd);
                 throw (std::runtime_error("Failed at reading file"));
+            }
             break;
         }
         file_input.append(buffer, static_cast<size_t>(bytes));

@@ -4,6 +4,13 @@ Tokenize::Tokenize() {}
 
 Tokenize::~Tokenize() {}
 
+bool isSpace(char c)
+{
+    if (c == '\f' || c == '\n' || c == ' ' || c == '\r' || c == '\t' || c == '\v')
+        return (true);
+    return (false);
+}
+
 void Tokenize::debug(std::vector<Token> storage) const
 {
     int i = 0;
@@ -66,7 +73,7 @@ std::vector<Token> Tokenize::tokenize(const std::string& input) const
             storage.push_back(token);
             continue;
         }
-        else if (isspace(c))
+        else if (isSpace(c))
         {
             if (!temp_storage.empty())
             {

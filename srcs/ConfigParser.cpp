@@ -3,15 +3,8 @@
 ConfigParser::ConfigParser(): _serv(), _loc() {}
 
 ConfigParser::~ConfigParser() {}
-//HELPERS 
-bool isspace(char c)
-{
-    if (c == '\f' || c == '\n' || c == ' ' || c == '\r' || c == '\t' || c == '\v')
-        return (true);
-    return (false);
-}
 
-bool isAllDigit(const std::string &str)
+bool ConfigParser::isAllDigit(const std::string &str)
 {
     if (str.empty())
         return (false);
@@ -25,13 +18,11 @@ bool isAllDigit(const std::string &str)
     return (true);
 }
 
-void checkSemiColon(const std::vector<Token>& tokens, size_t i)
+void ConfigParser::checkSemiColon(const std::vector<Token>& tokens, size_t i)
 {
     if (i + 1 < tokens.size() && tokens[i + 1].content != ";")
         throw std::runtime_error("Unexpected token '"+ tokens[i + 1].content +"' expecting -> ';' (Line: " + to_string(tokens[i].line)+ ")");
 }
-//////////////////////////////////
-
 
 size_t ConfigParser::parseBodySizeWeight(const std::string& str, const std::vector<Token>& tokens, size_t index)
 {
@@ -53,8 +44,9 @@ size_t ConfigParser::parseBodySizeWeight(const std::string& str, const std::vect
         return (bodySize);
 
     size_t multiplier;
-
-    if (str[i] == 'K')
+    if (i + 1 < str.size() && str[i] != ';')
+        throw std::runtime_error("Invalid character in client_max_body_size directive (line: " + to_string(tokens[index].line) + ")");
+    else if (str[i] == 'K')
         multiplier = 1000;
     else if (str[i] == 'M')
         multiplier = 1000000;
@@ -76,6 +68,7 @@ bool   ConfigParser::isLocationDirective(const std::string& token)
     || token == "autoindex"
     || token == "upload_store"
     || token == "cgi_extension"
+    || token == "cgi_path"
     || token == "location"
     || token == "return");
 }
@@ -291,35 +284,46 @@ ServerConfig ConfigParser::parseServerInfo(const std::vector<Token>& tokens, siz
             continue;
         }
 
-        if (isDirective(tokens[i].content))
+        DirectiveType directive = getDirectiveType(tokens[i].content);
+        switch (directive)
         {
-            DirectiveType directive = getDirectiveType(tokens[i].content);
-            switch (directive)
-            {
-                case DIRECTIVE_LISTEN:
-                    handleListenDirective(tokens, i);
-                    break;
-                case DIRECTIVE_ROOT:
-                    handleRootDirective(tokens, i, false);
-                    break;
-                case DIRECTIVE_INDEX:
-                    handleIndexDirective(tokens, i, false);
-                    break;
-                case DIRECTIVE_SERVER_NAME:
-                    handleServerNameDirective(tokens, i);
-                    break;
-                case DIRECTIVE_CLIENT_MAX_BODY_SIZE:
-                    handleClientMaxBodySizeDirective(tokens, i);
-                    break;
-                case DIRECTIVE_ERROR_PAGE:
-                    handleErrorPageDirective(tokens, i);
-                    break;
-                case DIRECTIVE_LOCATION:
-                    handleLocationDirective(tokens, i);
-                    break;
-                default:
+            case DIRECTIVE_LISTEN:
+                handleListenDirective(tokens, i);
+                break;
+            case DIRECTIVE_ROOT:
+                handleRootDirective(tokens, i, false);
+                break;
+            case DIRECTIVE_INDEX:
+                handleIndexDirective(tokens, i, false);
+                break;
+            case DIRECTIVE_SERVER_NAME:
+                handleServerNameDirective(tokens, i);
+                break;
+            case DIRECTIVE_CLIENT_MAX_BODY_SIZE:
+                handleClientMaxBodySizeDirective(tokens, i);
+                break;
+            case DIRECTIVE_ERROR_PAGE:
+                handleErrorPageDirective(tokens, i);
+                break;
+            case DIRECTIVE_LOCATION:
+                handleLocationDirective(tokens, i);
+                break;
+            default:
+                if (directive == DIRECTIVE_UNKNOWN && tokens[i].content == ";")
+                {
+                    i++;
+                    continue;
+                }
+                else if (directive == DIRECTIVE_UNKNOWN && tokens[i].content == "}")
+                {
+                    bracket_count--;
+                    if (bracket_count == 0)
+                        break;
+                    else
+                        throw std::runtime_error("Unexpected token '"+ tokens[i].content+ "' (line: " + to_string(tokens[i].line) + ")");
+                }
+                else
                     throw std::runtime_error("Directive not allowed in server (line: " + to_string(tokens[i].line) + ")");
-            }
         }
         i++;
     }
@@ -379,7 +383,7 @@ void ConfigParser::handleServerNameDirective(const std::vector<Token>& tokens, s
         throw std::runtime_error("Server_name directive expects an argument (line: " + to_string(tokens[i].line) + ")");
     ++i;
     size_t prev_line = tokens[i].line;
-    while (tokens[i].content != ";" && i < tSize)
+    while (i < tSize && tokens[i].content != ";")
     {
         if (tokens[i].content == "}" || isDirective(tokens[i].content))
             throw (std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(prev_line) + ")"));
@@ -444,6 +448,18 @@ bool ConfigParser::isHttpStatusCodeSuported(const std::string& token)
         return (false);
 }
 
+bool ConfigParser::isMethodSuported(const std::string& token)
+{
+    if (token == "GET")
+        return (true);
+    else if (token == "POST")
+        return (true);
+    else if (token == "DELETE")
+        return (true);
+    else
+        return (false);
+}
+
 void ConfigParser::handleErrorPageDirective(const std::vector<Token>& tokens, size_t& i)
 {
     size_t tSize = tokens.size();
@@ -485,6 +501,8 @@ void ConfigParser::handleAllowMethodsDirective(const std::vector<Token>& tokens,
     {
         if (tokens[i].content == "}" || isLocationDirective(tokens[i].content))
             throw std::runtime_error("Unexpected token '" + tokens[i].content + "' expecting -> ';' (line: " + to_string(directive_line) + ")");
+        if (!isMethodSuported(tokens[i].content))
+            throw (std::runtime_error("Method '"+ tokens[i].content + "' is not supported (line: " + to_string(directive_line) + ")"));
         _loc.setAllowedMethod(tokens[i].content);
         i++;
     }
@@ -527,7 +545,10 @@ void ConfigParser::handleAutoindexDirective(const std::vector<Token>& tokens, si
     if (tokens[i].content == "on" )
         _loc.setAutoIndex(true);
     else
-        _loc.setAutoIndex(false);
+    {
+        if (tokens[i].content != "off" )
+            throw (std::runtime_error("Invalid argument on autoindex directive (line: " + to_string(tokens[i].line) + ")"));
+    }
     checkSemiColon(tokens, i);
 }
 void ConfigParser::handleReturnDirective(const std::vector<Token>& tokens, size_t& i)
@@ -540,7 +561,7 @@ void ConfigParser::handleReturnDirective(const std::vector<Token>& tokens, size_
     if (isAllDigit(tokens[i].content))
     {
         nb = atoi(tokens[i].content.c_str());
-        if (!nb)
+        if (nb < 100 || nb > 599)
             throw std::runtime_error("Invalid HTTP status code on return directive (line: " + to_string(tokens[i].line) + ")");
     }
     else 

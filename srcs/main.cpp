@@ -1,4 +1,4 @@
-#include "test.hpp"
+#include "libs.hpp"
 #include "Client.hpp"
 #include "Server.hpp" 
 #include "Config.hpp"
@@ -14,9 +14,9 @@ void sig_handler(int sig)
 int main(int argc, char **argv)
 {
     if (argc < 2)
-        return (std::cerr << "Server expects a configuration file." << std::endl, 0);
+        return (std::cerr << "Server expects a configuration file." << std::endl, -1);
     else if (argc > 2)
-        return (std::cerr << "Server can only handle one configuration file." << std::endl, 0);
+        return (std::cerr << "Server can only handle one configuration file." << std::endl, -1);
     Config config;
 
     try
@@ -28,13 +28,13 @@ int main(int argc, char **argv)
         if (!server.init())
             return (-1);
         server.run();
-        server.shut_down();
     }
     catch(std::runtime_error& e)
     {
         std::cerr << e.what() << std::endl;
-        return (0);
+        return (-1);
     }
+    return (0);
 }
 
 //testing command:

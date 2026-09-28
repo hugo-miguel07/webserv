@@ -1,5 +1,5 @@
 #pragma once
-#include "test.hpp"
+#include "libs.hpp"
 #include "ConfigFile.hpp"
 #include "ServerConfig.hpp"
 
@@ -13,19 +13,18 @@ public:
     ~ConfigParser();
     std::vector<ServerConfig> parseServers(const std::vector<Token>& tokens);
     ServerConfig              parseServerInfo(const std::vector<Token>& tokens, size_t &i);
-
-    bool isHttpStatusCodeSuported(const std::string& token);
-    size_t parseBodySizeWeight(const std::string& str, const std::vector<Token>& token, size_t i);
-    Locations   handleLocation(const std::vector<Token> &tokens, size_t &i);
-    bool   isDirective(const std::string& token);
-    bool   isLocationDirective(const std::string& token);
-    DirectiveType getDirectiveType(const std::string& token);
-    DirectiveType getLocationDirectiveType(const std::string& token);
-    void debugLocations();
-    void debugServers();
-
-
-
+    size_t                    parseBodySizeWeight(const std::string& str, const std::vector<Token>& token, size_t i);
+    Locations                 handleLocation(const std::vector<Token> &tokens, size_t &i);
+    bool                      isHttpStatusCodeSuported(const std::string& token);
+    bool                      isMethodSuported(const std::string& token);
+    bool                      isDirective(const std::string& token);
+    bool                      isLocationDirective(const std::string& token);
+    bool                      isAllDigit(const std::string &str);
+    DirectiveType             getDirectiveType(const std::string& token);
+    DirectiveType             getLocationDirectiveType(const std::string& token);
+    void                      checkSemiColon(const std::vector<Token>& tokens, size_t i);
+    void                      debugLocations();
+    void                      debugServers();
 
     //DIRECTIVE HANDLERS
     void handleListenDirective(const std::vector<Token>& tokens, size_t &i);

@@ -1,5 +1,5 @@
 #pragma once
-#include "test.hpp"
+#include "libs.hpp"
 #include "ServerConfig.hpp"
 #include "Listener.hpp"
 
@@ -19,6 +19,7 @@ public:
                         ~Client();
                         Client(int client_fd, Listener *listener);
     int                 getFd() const;
+    void                setFd(int fd);
     const Listener&     getListener() const;
     void                appendRequest(const char *buffer, int total_bytes);
     void                appendResponse(const char *buffer, int total_bytes);

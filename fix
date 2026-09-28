@@ -1,9 +1,4 @@
-verificar se preciso de todas as directives validas para iniciar o server
-add syntax error
-
 post without upload store is an error
-
-checkar se a quantidade de bytes e maior doq indicado 
 
 error pages supported:
 400
@@ -20,7 +15,3 @@ Aparentemente preciso ter root directive para o location / funcionar
 ver se o HTTP status code do Return directive e valido
 
 Na parte do Server: mudar msg the erro para exceptions
-
-One important issue in the current code: Request.cpp creates a new, unparsed Config inside HostParsing():
-
-fix dangling configuration pointer on request part;

@@ -1,4 +1,4 @@
-#include "test.hpp"
+#include "libs.hpp"
 
 #pragma once
 class Tokenize
@@ -13,4 +13,5 @@ public:
     void debug(std::vector<Token> storage) const;
 };
 
+bool isSpace(char c);
 

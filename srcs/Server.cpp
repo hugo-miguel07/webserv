@@ -116,7 +116,6 @@ void Server::run()
         }
         Server::removeClients();
     }
-    Server::shut_down();
 }
 
 void Server::removeClients()
@@ -288,21 +287,30 @@ void Server::shut_down()
     for (std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
         if (it->getFd() != -1)
+        {
             close (it->getFd());
+            it->setFd(-1);
+        }
     }
     this->_clients.clear();
     
     for (std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
         if (it->fd != -1)
+        {
             close (it->fd);
+            it->fd = -1;
+        }
     }
     this->_pollfds.clear();
 
     for (std::vector<int>::iterator it = _server_fds.begin(); it != _server_fds.end(); ++it)
     {
         if (*it != -1)
+        {
             close(*it);
+            *it = -1;
+        }
     }
     this->_server_fds.clear();
 }

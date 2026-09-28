@@ -9,6 +9,8 @@ Client::~Client() {}
 
 int Client::getFd() const { return (this->_fd); }
 
+void Client::setFd(int fd)  { (_fd = fd); }
+
 const Listener& Client::getListener() const { return (*this->_listener); }
 
 void Client::appendRequest(const char *buffer, int total_bytes)

@@ -1,6 +1,6 @@
 #include "ServerConfig.hpp"
 
-ServerConfig::ServerConfig() : _port(-1), _maxBodySize(0), _root(""), _indexes(), _serverNames(), _locations(), _errorPages()  {}
+ServerConfig::ServerConfig() : _port(8080), _maxBodySize(0), _root(""), _indexes(), _serverNames(), _locations(), _errorPages()  {}
 
 ServerConfig::~ServerConfig() {}
 
