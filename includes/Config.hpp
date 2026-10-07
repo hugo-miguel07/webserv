@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 #include "ServerConfig.hpp"
 #include "ConfigFile.hpp"
 #include "ConfigParser.hpp"
@@ -12,5 +12,3 @@ public:
     ~Config();
     bool parse(const std::string &filename);
 };
-
-

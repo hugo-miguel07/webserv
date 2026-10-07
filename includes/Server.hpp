@@ -30,4 +30,3 @@ private:
     void enablePollOut();
     void disablePollOut(int fd);
 };
-

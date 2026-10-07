@@ -5,7 +5,7 @@ Server::Server(int port) : _server_fd(-1), _port(port) {}
 
 Server::~Server() { this->shut_down(); }
 
-bool Server::init() 
+bool Server::init()
 {
     this->_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (this->_server_fd == -1)
@@ -22,7 +22,7 @@ bool Server::init()
     }
 
     sockaddr_in address;
-    
+
     address.sin_family = AF_INET;
     address.sin_port = htons(this->_port);
     address.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -79,7 +79,7 @@ void Server::run()
         for (size_t i = 0; i < size; i++)
         {
             if (_pollfds[i].revents & POLLIN)
-            {  
+            {
                 if (_pollfds[i].fd == _server_fd)
                     Server::acceptClient();
                 else
@@ -181,7 +181,7 @@ void Server::acceptClient()
     if (client_fd == -1)
     {
         std::cout << "Error on accept()" << std::endl;
-        return ;    
+        return ;
     }
 
     if (fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1)
@@ -215,15 +215,15 @@ Client* Server::getClientById(int fd)
     return (NULL);
 }
 
-void Server::shut_down() 
-{ 
+void Server::shut_down()
+{
     for (std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
         if (it->get_fd() != -1)
             close (it->get_fd());
     }
     this->_clients.clear();
-    
+
     for (std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
         if (it->fd != -1)
@@ -232,5 +232,5 @@ void Server::shut_down()
     this->_pollfds.clear();
 
     if (this->_server_fd != -1)
-        close(this->_server_fd); 
+        close(this->_server_fd);
 }

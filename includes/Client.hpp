@@ -24,5 +24,5 @@ public:
     size_t              getResponseOffset() const;
 
 
-    void              mirror(); //apagar dps
+    void              mirror();
 };

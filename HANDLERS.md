@@ -1,10 +1,10 @@
 # Camada de Handlers de Requisição
 
-Estrutura base (scaffolding) para os seis handlers de requisição
+Estrutura dos seis handlers de requisição
 (`StaticHandler`, `UploadHandler`, `DeleteHandler`, `DirectoryListingHandler`,
-`RedirectHandler`, `CGIHandler`). Os cabeçalhos, a estrutura das classes e as
-declarações de funções já estão no lugar — as implementações são stubs a serem
-preenchidos um por um.
+`RedirectHandler`, `CGIHandler`). Os cabeçalhos e a estrutura das classes
+chegaram aqui como scaffolding; **todas as implementações estão agora
+completas e testadas** (ver tabela de estado no fim deste documento).
 
 O projeto compila limpo com `make` após essas mudanças.
 
@@ -45,15 +45,15 @@ Handler (abstrata)
 
 | Handler | Arquivo | Funções declaradas |
 |---|---|---|
-| `StaticHandler` | `includes/StaticHandler.hpp` | `handle`, `isFile`, `isDirectory`, `serveFile`, `serveIndex` (resolução de index), `serveDirectoryListing` |
-| `UploadHandler` | `includes/UploadHandler.hpp` | `handle`, `isBodyTooLarge` (vs `client_max_body_size`), `extractFilename`, `saveFile` (em `upload_store`) |
-| `DeleteHandler` | `includes/DeleteHandler.hpp` | `handle`, `removeFile`, `removeDirectory` |
-| `DirectoryListingHandler` | `includes/DirectoryListingHandler.hpp` | `handle`, `listEntries` (ordenado), `buildHtml` |
+| `StaticHandler` | `includes/StaticHandler.hpp` | `handle`, `serveFile`, `serveIndex` (resolução de index), `serveDirectoryListing` (delega no listing), `guessContentType` |
+| `UploadHandler` | `includes/UploadHandler.hpp` | `handle`, `isBodyTooLarge` (vs `client_max_body_size`), `extractFilename`, `saveFile` (em `upload_store`), `getBoundary`, `parseMultipart` / `extractDispositionFilename` (multipart RFC 2046), `sanitizeFilename` (traversal/ NUL rejeitados) |
+| `DeleteHandler` | `includes/DeleteHandler.hpp` | `handle`, `removeFile`, `removeDirectory` (rmdir, nunca recursivo), `deleteError` (errno → HTTP) |
+| `DirectoryListingHandler` | `includes/DirectoryListingHandler.hpp` | `handle`, `serve` (para quem já resolveu o caminho — `StaticHandler`), `listEntries` (ordenado), `buildHtml` (+ `urlEncode` nos hrefs, `htmlEscape` no título/texto) |
 | `RedirectHandler` | `includes/RedirectHandler.hpp` | `handle`, `buildTarget` (a partir da config de redirect da location) |
-| `CGIHandler` | `includes/CGIHandler.hpp` | `handle`, `isScript` (vs `cgi_extension`), `buildEnv` / `freeEnv` (variáveis de ambiente do CGI), `launch` (fork/dup2/execve), membro `_cgiPid` |
+| `CGIHandler` | `includes/CGIHandler.hpp` | `handle`, `isScript` (vs `cgi_extension`), `buildEnv` / `freeEnv` (variáveis de ambiente do CGI), `launch` (fork/dup2/execve), membro `_cgiPid`, acessores `getCgiPid`/`getStdinFd`/`getStdoutFd` (integração NEED_CGI) |
 
-Cada handler tem um `.cpp` stub correspondente em `srcs/` que compila limpo —
-os corpos apenas fazem `(void)` nos parâmetros e retornam valores padrão.
+Cada handler tem o seu `.cpp` em `srcs/` — os stubs iniciais foram todos
+substituídos por implementações completas (estado na tabela abaixo).
 
 ---
 
@@ -73,10 +73,41 @@ os corpos apenas fazem `(void)` nos parâmetros e retornam valores padrão.
   o pid do seu processo filho. Eles são instanciados por servidor, não por
   requisição.
 - Tudo é compatível com **C++98** e segue as convenções do projeto
-  (nomenclatura `_member`, acessores `get_x()`, casts `(void)` nos stubs).
+  (nomenclatura `_member`, acessores `get_x()`, casts `(void)` em
+  parâmetros não usados).
 
 ## Próximos passos conhecidos
 
-`handle()` atualmente não recebe configuração. Ao conectar o roteamento no
-`Server`, passe o `ServerConfig` + `Locations` correspondentes para `handle()`
-(ou defina-os no handler antes de chamá-lo).
+~~`handle()` atualmente não recebe configuração~~ — **resolvido**: `handle()`
+passa a receber `(const Request&, Response&, const ServerConfig&, const
+Locations&)`; os helpers partilhados (`buildError`, `resolvePath`,
+`isMethodAllowed`) já estão implementados. Ver `HANDLER_BASE.md` para a
+explicação completa.
+
+## Estado dos handlers concretos
+
+| Handler | Estado | Documento |
+|---|---|---|
+| `RedirectHandler` | **implementado + testado** | `REDIRECT_HANDLER.md` |
+| `StaticHandler` | **implementado + testado** | `STATIC_HANDLER.md` |
+| `DirectoryListingHandler` | **implementado + testado** | `DIRECTORY_LISTING_HANDLER.md` |
+| `UploadHandler` | **implementado + testado** | `UPLOAD_HANDLER.md` |
+| `DeleteHandler` | **implementado + testado** | `DELETE_HANDLER.md` |
+| `CGIHandler` | **implementado + testado** (síncrono; NEED_CGI p/ integração futura) | `CGI_HANDLER.md` |
+
+Regressão: `test/handler_test.cpp` (compilar à parte, instruções no
+cabeçalho do ficheiro). 80 testes, todos verdes.
+
+Ligação ao `Server` (despacho, ordem de checks, smoke tests):
+ver **`INTEGRATION_ROUTER.md`** — o checklist para quem faz o router.
+
+`Locations` ganhou os acessores stub acordados (`getRedirect`,
+`getRedirectCode`, `getRoot`, `getIndexes`, `getAutoindex`,
+`getUploadStore`, `getCgiExtensions` + setters) — o parser de config
+preenche-os; enquanto não o fizer, os handlers degradam com respostas
+correctas (500 no redirect, herança do server no static).
+
+Também na base (`Handler`): `notAllowed()` (405 + `Allow`), `isFile()`,
+`isDirectory()` — partilhados por todos os handlers que mexem em ficheiros.
+**Atenção à ordem**: headers pós-`buildError()`, que o `clear()` apaga
+o que veio antes (apanhado pelos testes; ver `STATIC_HANDLER.md` §2).

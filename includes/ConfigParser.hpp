@@ -3,10 +3,10 @@
 #include "ConfigFile.hpp"
 #include "ServerConfig.hpp"
 
-class ConfigParser  
+class ConfigParser
 {
 private:
-    
+
 public:
     ConfigParser();
     ~ConfigParser();
@@ -15,5 +15,3 @@ public:
     ServerConfig              parseServerInfo(const std::vector<std::string>& tokens, size_t &i);
 
 };
-
-

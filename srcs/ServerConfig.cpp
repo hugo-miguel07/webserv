@@ -60,4 +60,3 @@ std::vector<std::string> ServerConfig::getServerName() const
 {
     return (_serverNames);
 }
-

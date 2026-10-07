@@ -1,4 +1,4 @@
-#pragma once    
+#pragma once
 #include "test.hpp"
 
 class ConfigFile
@@ -11,7 +11,5 @@ public:
                     ~ConfigFile();
     bool            openFile (const std::string& filename);
     bool            read_and_append(const std::string& filename);
-    std::string&    get_str(); 
+    std::string&    get_str();
 };
-
-

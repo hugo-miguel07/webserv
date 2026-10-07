@@ -27,10 +27,6 @@ public:
     void setHost(const std::string& host);
     void setIndex(const std::string& index);
     void setServerName(const std::string& name);
-    void setLocations(); //??????
+    void setLocations();
 
-    //location
-    //errorPages
 };
-
-
