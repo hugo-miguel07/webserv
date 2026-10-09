@@ -189,6 +189,8 @@ void Server::handleRead(Client &client)
             req.start_parsing(client.getRequestBuffer());
         }
         /*==============================================================================*/
+        if (header_status)
+            client.setConfig(req.getConfig());
         std::cout << bytes << "bytes received\n";
     }
     else if (bytes == 0)
