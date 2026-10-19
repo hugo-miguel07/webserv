@@ -37,11 +37,6 @@ const std::string& Client::getResponseBuffer() const
     return (_responseBuffer);
 }
 
-const std::string& Client::getRequestBuffer() const
-{
-    return (_requestBuffer);
-}
-
 size_t Client::getResponseOffset() const
 {
     return (_responseOffset);

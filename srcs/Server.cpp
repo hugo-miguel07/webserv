@@ -1,6 +1,7 @@
 #include "Server.hpp"
 #include "Client.hpp"
 #include "Request.hpp"
+#include <cstdio>
 
 Server::Server(const Config &config) : _config(config) {}
 
@@ -20,6 +21,13 @@ bool Server::init()
         int server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd == -1)
             throw(std::runtime_error("Error on socket()"));
+        int reuse = 1;
+        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
+                       &reuse, sizeof(reuse)) == -1)
+        {
+            close(server_fd);
+            throw(std::runtime_error("Error on setsockopt()"));
+        }
         if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
         {
             close(server_fd);
@@ -31,6 +39,7 @@ bool Server::init()
         address.sin_addr.s_addr = htonl(INADDR_ANY);
         if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) == -1)
         {
+            perror("bind");
             close(server_fd);
             throw(std::runtime_error("Error on bind()"));
         }
@@ -182,7 +191,7 @@ void Server::handleRead(Client &client)
                 std::cout << "Chuncked not complete" << std::endl;
         }
         else if (!header_status)
-            std::cout << "Request not complete" << std::endl;
+            std::cout << "header not complete" << std::endl;
         else
         {
             std::cout << "Request (no body) complete" << std::endl;
@@ -191,7 +200,7 @@ void Server::handleRead(Client &client)
         /*==============================================================================*/
         if (header_status)
             client.setConfig(req.getConfig());
-        std::cout << bytes << "bytes received\n";
+        std::cout << "recv complete" << std::endl;
     }
     else if (bytes == 0)
         _removeClients.push_back(client.getFd());
