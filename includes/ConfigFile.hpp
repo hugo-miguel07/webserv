@@ -1,5 +1,5 @@
-#pragma once
-#include "test.hpp"
+#pragma once    
+#include "libs.hpp"
 
 class ConfigFile
 {
@@ -9,7 +9,7 @@ private:
 public:
                     ConfigFile();
                     ~ConfigFile();
-    bool            openFile (const std::string& filename);
-    bool            read_and_append(const std::string& filename);
-    std::string&    get_str();
+    void            openFile (const std::string& filename);
+    void            read_and_append(const std::string& filename);
+    std::string&    get_str(); 
 };

@@ -11,7 +11,7 @@ INCDIR		= includes/
 # ================================= FILES =================================== #
 
 SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp \
-			  Handler.cpp Request.cpp Response.cpp StaticHandler.cpp UploadHandler.cpp \
+			  Handler.cpp Request.cpp Response.cpp StaticHandler.cpp UploadHandler.cpp trim.cpp Tokenize.cpp Listener.cpp\
 			  DeleteHandler.cpp DirectoryListingHandler.cpp RedirectHandler.cpp CGIHandler.cpp
 
 
@@ -78,7 +78,7 @@ r: reclear
 	@./$(NAME)
 
 v: reclear
-	valgrind --leak-check=full  --track-origins=yes --show-leak-kinds=all --track-fds=yes ./$(NAME)
+	valgrind --leak-check=full  --track-origins=yes --show-leak-kinds=all --track-fds=yes ./$(NAME) configurations/config.config
 
 # ------------------------------- Phony Targets ----------------------------- #
 .PHONY: all clean fclean re

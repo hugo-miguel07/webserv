@@ -1,119 +1,123 @@
 #include "Locations.hpp"
 
-Locations::Locations()
-    : _path(""),
-      _allowed_methods(),
-      _redirect(""),
-      _redirect_code(0),
-      _root(""),
-      _indexes(),
-      _autoindex(false),
-      _upload_store(""),
-      _cgi_extensions(),
-      _cgi_interpreter("")
-{
-}
+Locations::Locations() : _path(""), _root(""), _uploadStore(""), _cgiExtension(""), _autoindex(false), _allowed_methods(), _indexes(), _return() {}
 
-Locations::~Locations()
-{
-}
+Locations::~Locations() {}
 
-const std::string& Locations::getPath() const
+std::string Locations::getPath() const 
 {
     return (_path);
 }
 
-const std::vector<std::string>& Locations::getAllowedMethods() const
-{
-    return (_allowed_methods);
-}
-
-void Locations::setPath(const std::string &path)
-{
-    _path = path;
-}
-
-void Locations::addAllowedMethod(const std::string &method)
-{
-    _allowed_methods.push_back(method);
-}
-
-
-const std::string& Locations::getRedirect() const
-{
-    return (_redirect);
-}
-
-int Locations::getRedirectCode() const
-{
-    return (_redirect_code);
-}
-
-void Locations::setRedirect(const std::string &target, int code)
-{
-    _redirect = target;
-    _redirect_code = code;
-}
-
-
-const std::string& Locations::getRoot() const
+std::string Locations::getRoot() const 
 {
     return (_root);
 }
 
-const std::vector<std::string>& Locations::getIndexes() const
+std::string Locations::getUploadStore() const 
 {
-    return (_indexes);
+    return (_uploadStore);
 }
 
-bool Locations::getAutoindex() const
+std::string Locations::getCgiExtension() const
+{
+    return (_cgiExtension);
+}
+
+std::string Locations::getCgiPath() const
+{
+    return (_cgiPath);
+}
+
+bool Locations::getAutoIndex() const
 {
     return (_autoindex);
 }
 
-void Locations::setRoot(const std::string &root)
+std::vector<std::string> Locations::getAllowedMethods() const
 {
+    return (_allowed_methods);
+}
+
+std::vector<std::string> Locations::getIndexes() const
+{
+    return (_indexes);
+}
+
+std::map<int, std::string> Locations::getReturn() const
+{
+    return (_return);
+}
+
+void Locations::setPath(const std::string& path)
+{
+    if (path.empty())
+        return ;
+    _path = path;
+}
+
+void Locations::setRoot(const std::string& root)
+{
+    if (root.empty())
+        return ;
     _root = root;
 }
 
-void Locations::addIndex(const std::string &index)
+void Locations::setUploadStore(const std::string& uploadPath)
 {
+    if (uploadPath.empty())
+        return ;
+    _uploadStore = uploadPath;
+}
+
+void Locations::setCgiExtension(const std::string& cgiExtension)
+{
+    if (cgiExtension.empty())
+        return ;
+    _cgiExtension = cgiExtension;
+}
+
+void Locations::setCgiPath(const std::string& cgiPath)
+{
+    if (cgiPath.empty())
+        return ;
+    _cgiPath = cgiPath;
+}
+
+void Locations::setAutoIndex(const bool &flag)
+{
+    _autoindex = flag;
+}
+
+void Locations::setAllowedMethod(const std::string& method)
+{
+    if (method.empty())
+        return ;
+    _allowed_methods.push_back(method);
+}
+
+void Locations::setIndex(const std::string& index)
+{
+    if (index.empty())
+        return ;
     _indexes.push_back(index);
 }
 
-void Locations::setAutoindex(bool on)
+void Locations::setReturn(const int &returnCode, const std::string& returnTarget)
 {
-    _autoindex = on;
+    _return.insert(std::make_pair(returnCode, returnTarget));
 }
 
-
-const std::string& Locations::getUploadStore() const
+void Locations::erase()
 {
-    return (_upload_store);
+    _path = "";
+    _root = "";
+    _uploadStore = "";
+    _cgiExtension = "";
+    _cgiPath = "";
+    _autoindex = false;
+    _indexes.clear();
+    _allowed_methods.clear();
+    _return.clear();
 }
 
-void Locations::setUploadStore(const std::string &dir)
-{
-    _upload_store = dir;
-}
-
-
-const std::vector<std::string>& Locations::getCgiExtensions() const
-{
-    return (_cgi_extensions);
-}
-
-void Locations::addCgiExtension(const std::string &ext)
-{
-    _cgi_extensions.push_back(ext);
-}
-
-const std::string& Locations::getCgiInterpreter() const
-{
-    return (_cgi_interpreter);
-}
-
-void Locations::setCgiInterpreter(const std::string &cmd)
-{
-    _cgi_interpreter = cmd;
-}

@@ -4,29 +4,36 @@ class ServerConfig
 {
 private:
     int _port;
-    int _maxBodySize;
+    size_t _maxBodySize;
     std::string _root;
     std::string _host;
     std::vector<std::string> _indexes;
     std::vector<std::string> _serverNames;
     std::vector<Locations> _locations;
+    std::map<int, std::string> _errorPages;
+    
 public:
     ServerConfig();
     ~ServerConfig();
 
-    int                         getBodySize() const;
+    size_t                      getBodySize() const;
     int                         getPort() const;
     std::string                 getRoot() const;
     std::string                 getHost() const;
     std::vector<std::string>    getIndex() const;
     std::vector<std::string>    getServerName() const;
+    std::map<int, std::string>  getErrorPages() const;
+    std::vector<Locations>      getLocations() const;
+    void                        addLocation(const Locations& location);
 
     void setPort(const int& port);
-    void setBodySize(const int& bodySize);
+    void setBodySize(const size_t& bodySize);
     void setRoot(const std::string& root);
     void setHost(const std::string& host);
     void setIndex(const std::string& index);
     void setServerName(const std::string& name);
-    void setLocations();
+    void setLocations(); //??????
+    void setErrorPages(const int& key, const std::string& value);
 
+    //location
 };

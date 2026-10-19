@@ -1,2 +1,17 @@
-port: 8080aaaa is valid?
-index: can I have more than one index???
+post without upload store is an error
+
+error pages supported:
+400
+403
+404
+405
+413
+500
+501
+check with Hugo afterwards if he will actually implement all of then.
+
+Aparentemente preciso ter root directive para o location / funcionar
+
+ver se o HTTP status code do Return directive e valido
+
+Na parte do Server: mudar msg the erro para exceptions

@@ -1,18 +1,20 @@
 #include "Config.hpp"
+#include "Tokenize.hpp"
 
 Config::Config() {}
 
 Config::~Config() {}
 
-bool Config::parse(const std::string& filename)
+void Config::parse(const std::string& filename)
 {
     ConfigFile confFile;
     ConfigParser configParser;
-    std::vector<std::string> tokens;
+    Tokenize tokanizer;
 
     confFile.read_and_append(filename);
-    tokens = configParser.tokenize(confFile.get_str());
-    this->_servers = configParser.parseServers(tokens);
+    this->_servers = configParser.parseServers(tokanizer.tokenize(confFile.get_str()));
+}
 
-    return (true);
+const std::vector<ServerConfig>& Config::getServers() const {
+    return (_servers);
 }

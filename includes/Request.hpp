@@ -1,47 +1,50 @@
-#pragma once
+#ifndef REQUEST_HPP
+#define REQUEST_HPP
 #include <string>
+#include <sstream>
 #include <map>
-#include "test.hpp"
+#include <vector>
+#include <cstdlib>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
 
-class Request
-{
-public:
-    Request();
-    ~Request();
+#include "Client.hpp"
 
-    std::string method;
-    std::string target;
-    std::string path;
-    std::string query;
-    std::string version;
+class Request: public Client {
+    private:
+        std::string                         _TransferMethod;
+        int                                 _nextRequestBytes;
+        size_t                              _contentLen;
+        bool                                _finisedHeader;
+        bool                                _hasContent;
+        bool                                _hasTransferEncoding;
+        std::string                         _body;
+        std::map<std::string, std::string>  _requestLine;
+        std::map<std::string, std::string>  _headers;
+    public:
+        Request(const Client& client);
+        ~Request();
+        bool    getHasContentStatus();
+        bool    getTransferEncodingStatus();
+        size_t  getContentLength() const;
 
-    std::map<std::string, std::string> headers;
+        /*Checkers*/
+        bool    checkHeader(const std::string requestBuffer);
+        void    readingBody(const std::string requestBuffer);
+        bool    checkingBody_framing(const std::string requestBuffer);
+        bool    checkingBody_chuncked(const std::string requestBuffer);
 
-    std::string body;
-
-
-    bool parse(const std::string &raw);
-
-    bool isValid() const;
-
-    int getErrorStatus() const;
-
-    void clear();
-
-    static bool isComplete(const std::string &buf);
-
-    static size_t peekContentLength(const std::string &buf);
-
-
-    std::string getHeader(const std::string &name) const;
-
-    bool hasBody() const;
-
-    size_t getContentLength() const;
-
-    static std::string urlDecode(const std::string &s, bool plusAsSpace);
-
-private:
-    bool    _valid;
-    int     _errorStatus;
+        /*Parsing*/
+        void    start_parsing(const std::string requestBuffer);
+        void    QueryParsing(std::string requestTarget);
+        void    RequestLineParsing(const std::string requestBuffer);
+        void    MethodParsing(std::string method);
+        void    HeadersToMap(const std::string requestBuffer);
+        void    parseBody(const std::string& buffer);
+        void    HostParsing(std::string value);
+        void    parseChunkedBody(const std::string& buffer, size_t pos);
 };
+
+std::string trim(const std::string &str);
+#endif

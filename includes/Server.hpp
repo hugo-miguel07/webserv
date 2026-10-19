@@ -1,29 +1,32 @@
 #pragma once
 
-#include "test.hpp"
+#include "libs.hpp"
 #include "Client.hpp"
+#include "Config.hpp"
+#include "Listener.hpp"
 
 class Server
 {
 private:
-    int                         _server_fd;
-    int                         _port;
+    std::vector<int>            _server_fds;
     std::vector<Client>         _clients;
     std::vector<struct pollfd>  _pollfds;
-    std::vector<Client>         _removeClients;
-
+    std::vector<int>            _removeClients;
+    Config                      _config;
+    std::vector<Listener>       _listeners;
 public:
-    Server(int port);
+    Server(const Config& config);
     ~Server();
 
     bool        init();
-    int         getServerFd() const;
-    void        acceptClient();
+    void        acceptClient(int fd);
     void        run();
     void        shut_down();
     Client*     getClientById(int fd);
 
 private:
+    Listener* FindListener(int port);
+    bool isServerFd(int fd);
     void handleRead(Client &client);
     void handleWrite(Client &client);
     void removeClients();

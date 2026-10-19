@@ -1,10 +1,17 @@
-#include "Client.hpp"
+#include "../includes/Client.hpp"
+#include "../includes/Request.hpp"
 
-Client::Client(int client_fd) : _fd(client_fd), _responseOffset(0), _responseReady(false) {}
+Client::Client() : _fd(-1), _responseOffset(0), _responseReady(false), _listener(NULL), _config(NULL) {}
+
+Client::Client(int client_fd, Listener *listener) : _fd(client_fd), _responseOffset(0), _responseReady(false), _listener(listener), _config(NULL) {}
 
 Client::~Client() {}
 
-int Client::get_fd() const { return (this->_fd); }
+int Client::getFd() const { return (this->_fd); }
+
+void Client::setFd(int fd)  { (_fd = fd); }
+
+const Listener& Client::getListener() const { return (*this->_listener); }
 
 const std::string& Client::getRequestBuffer() const
 {
@@ -30,6 +37,11 @@ const std::string& Client::getResponseBuffer() const
     return (_responseBuffer);
 }
 
+const std::string& Client::getRequestBuffer() const
+{
+    return (_requestBuffer);
+}
+
 size_t Client::getResponseOffset() const
 {
     return (_responseOffset);
@@ -38,6 +50,11 @@ size_t Client::getResponseOffset() const
 void Client::setResponseOffset(size_t value)
 {
     _responseOffset = value;
+}
+
+const ServerConfig& Client::getConfig() const
+{
+    return (*_config);
 }
 
 bool Client::getResponseReady() const
@@ -50,7 +67,10 @@ void Client::setResponseReady(bool flag)
     _responseReady = flag;
 }
 
-void Client::mirror()
+void Client::setConfig(const ServerConfig& config)
 {
-    _responseBuffer = _requestBuffer;
+    _config = &config;
 }
+
+
+
