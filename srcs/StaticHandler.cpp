@@ -53,7 +53,7 @@ Handler::e_status StaticHandler::handle(const Request &req, Response &res,
         if (served)
             return (DONE);
 
-        if (loc.getAutoindex())
+        if (loc.getAutoIndex())
             return (serveDirectoryListing(req, res, filePath));
 
         buildError(res, 403);

@@ -34,6 +34,7 @@ class Request: public Client {
         std::string                         path;
         std::string                         query;
         std::string                         body;
+        std::string                         version;
         std::map<std::string, std::string>  headers;
 
         Request();
@@ -42,6 +43,8 @@ class Request: public Client {
         ~Request();
         bool    getHasContentStatus();
         bool    getTransferEncodingStatus();
+        size_t  getContentLength() const;
+        const std::string& getHeader(const std::string& name) const;
 
         /*Checkers*/
         bool    checkHeader(const std::string requestBuffer);

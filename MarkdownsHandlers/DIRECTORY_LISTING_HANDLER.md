@@ -8,7 +8,7 @@ autoindex** — raramente chamado diretamente, quase sempre via
 index correspondeu.
 
 Estado: **implementado e testado** (8 testes próprios; suite completa de
-80 em `test/handler_test.cpp`).
+81 em `test/handler_test.cpp`).
 
 ---
 
@@ -76,9 +76,11 @@ static std::string urlEncode(const std::string &raw);
 Codifica tudo o que **não** está no conjunto não-reservado do
 RFC 3986 §2.3 (`ALPHA / DIGIT / - . _ ~`) como `%XX` hexuppercase.
 Ser conservador aqui é grátis: um espaço vira `%20`, um `&` vira `%26`
-(dentro de um atributo href isso importa), um `<` nunca parti o HTML do
-link. Não se codifica o `urlPath` duas vezes — ele chega já
-percent-descodificado do parser e é re-codificado uma única vez aqui.
+(dentro de um atributo href isso importa), um `<` nunca parte o HTML do
+link. Não se codifica o `urlPath` duas vezes: o parser **não** faz
+percent-decoding (ver `REQUEST_RESPONSE.md` §1.7), o path chega cru e é
+codificado uma única vez aqui — o que também quer dizer que um `%20` já
+presente no pedido sai como `%2520`.
 
 ## 5. handle() direto — defesa em profundidade
 
@@ -107,7 +109,7 @@ GET /sub/  (autoindex on, sem index)
   StaticHandler
     ├─ método OK, resolvePath OK, isDirectory OK, slash OK
     ├─ serveIndex() → false (não há index.html)
-    └─ loc.getAutoindex() == true
+    └─ loc.getAutoIndex() == true
          └─ DirectoryListingHandler::serve(res, "/www/sub", "/sub/")
               └─ 200 + text/html + página
 ```
@@ -135,4 +137,4 @@ Testes relevantes em `test/handler_test.cpp`:
   `<`/`&` cru chega ao HTML;
 - autoindex on via `StaticHandler` → página "Index of /emptydir/"
   (integração §6);
-- 80 testes totais, `make` limpo com `-Wall -Wextra -Werror -std=c++98`.
+- 81 testes totais, `make` limpo com `-Wall -Wextra -Werror -std=c++98`.

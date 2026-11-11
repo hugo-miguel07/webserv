@@ -13,7 +13,8 @@ pedido e preenche a resposta**.
 ```
 Server (loop de poll)
   │
-  │  Request::isComplete() → Request::parse()          [REQUEST_RESPONSE.md]
+  │  checkHeader → readingBody → checkingBody_* → start_parsing
+  │                                    [REQUEST_RESPONSE.md §1.3]
   ▼
 ROTEAMENTO (a implementar no Server)
   │  1. escolhe o ServerConfig pelo Host
@@ -175,9 +176,13 @@ falha se o resultado escaparia à root.
   nós: `/www/../etc` chamaria `stat("/www/../etc")` e o kernel resolve
   para `/etc`. Colapsar *lexicamente* (sem tocar no disco) deixa o
   servidor no controlo.
-- O `requestPath` que aqui chega **já foi percent-descodificado** pelo
-  `Request::parse()` (`%2e%2e` já virou `..`) — por isso a proteção apanha
-  também os pedidos ofuscados. Ver `REQUEST_RESPONSE.md` §1.7.
+- O `requestPath` que aqui chega **não foi descodificado**: o `Request` não
+  faz percent-decoding (ver `REQUEST_RESPONSE.md` §1.7). Consequência dupla:
+  `%2e%2e` é o nome literal de um ficheiro (404 se não existir), não um `..`,
+  e `/my%20file` procura um ficheiro chamado `my%20file`; e como `/` não se
+  esconde em `%2F`, os separadores que o colapso conta são os reais. Se algum
+  dia se acrescentar decoding, tem de ser **antes** de `resolvePath` — senão
+  `%2e%2e` passa a ser um `..` que este colapso já não apanha.
 
 Os handlers chamam-no no início de `handle()`:
 
@@ -190,7 +195,7 @@ if (!resolvePath(locRoot, req.path, filePath))
 }
 ```
 
-## 6. `isMethodAllowed()` — 401 vs 405 vs 501, quem decide o quê
+## 6. `isMethodAllowed()` — 405, e porque não há 501
 
 ```cpp
 bool isMethodAllowed(const Request &req, const Locations &loc) const;
@@ -208,11 +213,15 @@ Compara `req.method` com os métodos configurados na location
 
 | Camada | Código | Exemplo |
 |---|---|---|
-| **Parser** (`Request::parse`) | método desconhecido do protocolo | `FROBNICATE /a` → **501 Not Implemented** |
-| **Handler** (`isMethodAllowed`) | método conhecido, proibido nesta location | `DELETE /index.html` numa location só-GET → **405 Method Not Allowed** (+ header `Allow`) |
-| **Handler concreto** | método certo, mas o recurso não o suporta | `POST` num `StaticHandler` → o router nem devia ter chegado aqui |
+| **Parser** (`checkHeader` → `start_parsing`) | não valida o método: guarda o token como veio | `FROBNICATE /a` chega ao handler com `method == "FROBNICATE"` — **sem 501** |
+| **Handler** (`isMethodAllowed`) | método fora do `allow_methods` da location | `DELETE /index.html` numa location só-GET → **405 Method Not Allowed** (+ header `Allow`) |
+| **Handler concreto** | método que a config permite mas aquele handler não serve | `POST` num `StaticHandler` → **405** com `Allow: GET, HEAD` |
 
-Esta separação é a mesma do nginx e é uma pergunta clássica de avaliação.
+Cuidado com a expectativa: o nginx responde **501** a um método que não
+implementa e **405** ao que implementa mas está proibido. Este servidor
+**não faz a primeira distinção** — não há whitelist de métodos no parser,
+por isso tudo o que não é servido sai como 405. Um `FROBNICATE` não é erro
+de protocolo aos olhos do parser; é só um método que nenhum handler aceita.
 
 ## 7. `Locations` — o que foi acrescentado
 
@@ -220,22 +229,24 @@ A classe existia mas era uma caixa fechada (campos privados sem
 acessores). Agora:
 
 ```cpp
-const std::string&              getPath() const;
-const std::vector<std::string>& getAllowedMethods() const;  // por referência: sem cópia
+std::string                     getPath() const;
+std::vector<std::string>        getAllowedMethods() const;   // por valor: cópia
 void setPath(const std::string &path);
-void addAllowedMethod(const std::string &method);   // um por token
+void setAllowedMethod(const std::string &method);   // um por token
 ```
 
-`addAllowedMethod` segue o estilo do `ServerConfig::setIndex`
+`setAllowedMethod` segue o estilo do `ServerConfig::setIndex`
 (um `push_back` por chamada) — é o formato que o `ConfigParser` usa nos
 blocos `location { }` (um `allow_methods GET POST` gera duas chamadas).
 
-**Já existe na `Locations`** (os handlers usam tudo isto): root/index/
-autoindex por location, `upload_store`, `redirect` + `redirect_code`,
-`cgi_extensions` + `cgi_interpreter`. **Falta só a `error_page`**: os
-handlers respondem erros com o corpo default (`Response::setError(code)`);
-quando a config a tiver, o caminho já existe (`setError(code, customBody)`) —
-falta decidir quem a aplica (ver `INTEGRATION_ROUTER.md` §3).
+**Já existe na `Locations`** (os handlers usam tudo isto): `root`, `index`,
+`allow_methods`, `autoindex`, `upload_store`, `cgi_extension` + `cgi_path` e
+`return` (`map<int, string>`). A `error_page` **é lida** pelo parser mas fica
+no `ServerConfig` (`_errorPages`), não na location, e nenhum handler lê
+`getErrorPages()`: os erros continuam a sair com o corpo default
+(`Response::setError(code)`). Quando se ligar, o caminho já existe
+(`setError(code, customBody)`) — falta decidir quem a aplica
+(ver `INTEGRATION_ROUTER.md` §3).
 
 ## 8. Esqueleto típico de um handler concreto
 

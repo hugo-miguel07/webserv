@@ -100,6 +100,21 @@ bool    Request::getTransferEncodingStatus(){
     return _hasTransferEncoding;
 }
 
+size_t  Request::getContentLength() const{
+    return _contentLen;
+}
+
+const std::string& Request::getHeader(const std::string& name) const{
+    static const std::string empty;
+    std::map<std::string, std::string>::const_iterator it = _headers.find(name);
+    if (it != _headers.end())
+        return it->second;
+    it = headers.find(name);
+    if (it != headers.end())
+        return it->second;
+    return empty;
+}
+
 bool Request::checkHeader(const std::string buffer)
 {
     if (buffer.find("\r\n\r\n") == std::string::npos)
@@ -285,9 +300,7 @@ void    Request::RequestLineParsing(const std::string request)
     if (method.empty())
         throw std::runtime_error("Method doesnt exist!");
 
-    if (method != "GET" && method != "POST" && method != "DELETE" && method != "HEAD")
-        throw std::runtime_error("Invalid method");
-    
+    /* Unknown methods are answered with 405 by the dispatcher, not by throwing here */
     _requestLine.insert(std::make_pair("Method", method));
     std::cout << "Method " << method << std::endl;
 
@@ -484,16 +497,9 @@ void Request::MethodParsing(std::string method)
     if (!found)
         throw std::runtime_error("Location not found");
 
-    std::vector<std::string> allowed_methods =
-        locations[selected].getAllowedMethods();
-
-    for (size_t j = 0; j < allowed_methods.size(); ++j)
-    {
-        if (method == allowed_methods[j])
-            return;
-    }
-
-    throw std::runtime_error("Method not allowed");
+    /* Allowed-method check is done in Server::handleRead dispatch (405 response) */
+    (void)selected;
+    (void)method;
 }
 
 void Request::parseChunkedBody(const std::string& buffer, size_t pos)

@@ -5,7 +5,7 @@ Documentação de estudo do `CGIHandler` (`includes/CGIHandler.hpp` +
 `REQUEST_RESPONSE.md` (`Request` corpo já descodificado).
 
 Estado: **implementado e testado** — 15 testes próprios em
-`test/handler_test.cpp` (80 no total no suite), com scripts Python reais.
+`test/handler_test.cpp` (81 no total no suite), com scripts Python reais.
 
 ---
 
@@ -131,8 +131,8 @@ contém `c_str()` apontando para lá. O `freeEnv()` só liberta o array de
 ponteiros — nenhum leak possível entre tentativas, nenhum ponteiro
 pendente no filho.
 
-**O interpretador NUNCA vem do cliente**: vem de
-`Locations::setCgiInterpreter()` (config do servidor). Nem o path do
+**O interpretador NUNCA vem do cliente**: vem de `loc.getCgiPath()`
+(directiva `cgi_path`, config do servidor). Nem o path do
 script vem cru: vem do `resolvePath()` contra a root.
 
 ## 7. Parse do output CGI (RFC 3875 §6.2)

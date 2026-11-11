@@ -5,7 +5,7 @@ Documentação de estudo do `DeleteHandler` (`includes/DeleteHandler.hpp` +
 `STATIC_HANDLER.md`/`UPLOAD_HANDLER.md` (padrões de 405 e de ordem de checks).
 
 Estado: **implementado e testado** — 14 testes próprios em
-`test/handler_test.cpp` (80 no total no suite).
+`test/handler_test.cpp` (81 no total no suite).
 
 ---
 

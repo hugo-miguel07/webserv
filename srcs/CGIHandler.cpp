@@ -255,7 +255,12 @@ Handler::e_status CGIHandler::handle(const Request &req, Response &res,
         return (DONE);
     }
 
-    if (!isScript(scriptPath, loc.getCgiExtensions()))
+    std::vector<std::string> cgiExts;
+    if (!loc.getCgiExtension().empty())
+    {
+        cgiExts.push_back(loc.getCgiExtension());
+    }
+    if (!isScript(scriptPath, cgiExts))
     {
         buildError(res, 400);
         return (DONE);
@@ -267,13 +272,15 @@ Handler::e_status CGIHandler::handle(const Request &req, Response &res,
         return (DONE);
     }
 
-    if (loc.getCgiInterpreter().empty())
+    // Use first part of cgi_path as interpreter, or default to the script extension
+    const std::string interpreter = loc.getCgiPath();
+    if (interpreter.empty())
     {
         buildError(res, 500);
         return (DONE);
     }
 
-    bool launched = launch(scriptPath, loc.getCgiInterpreter(), req);
+    bool launched = launch(scriptPath, interpreter, req);
     if (!launched)
     {
         buildError(res, 500);

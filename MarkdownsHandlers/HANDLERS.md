@@ -37,7 +37,7 @@ Handler (abstrata)
   - `DONE` — resposta totalmente construída, pronta para enviar
   - `NEED_CGI` — manter a conexão aberta e continuar fazendo polling (processo CGI em execução)
   - `ERROR` — falha interna, a conexão deve ser fechada
-- `virtual handle(const Request&, Response&) = 0` — ponto de entrada principal
+- `virtual handle(const Request&, Response&, const ServerConfig&, const Locations&) = 0` — ponto de entrada principal
 - Helpers compartilhados por todos os handlers concretos:
   - `buildError()` — resposta de erro mínima (status + corpo padrão)
   - `resolvePath()` — resolve o caminho da requisição contra a raiz (root), com proteção contra traversal
@@ -59,7 +59,7 @@ substituídos por implementações completas (estado na tabela abaixo).
 
 ## Correções em arquivos existentes
 
-- **`includes/ServerConfig.hpp`** — adicionados `_host`, `getHost()`, `setHost()`,
+- **`includes/ServerConfig.hpp`** — adicionados `_host` e `getHost()` (não há `setHost`: `_host` nunca é preenchido),
   aos quais `ServerConfig.cpp` já fazia referência (incompatibilidade pré-existente).
 - **`includes/Client.hpp` / `srcs/Client.cpp`** — adicionado `getRequestBuffer()`
   (os handlers precisam de acesso à requisição bruta).
@@ -70,8 +70,9 @@ substituídos por implementações completas (estado na tabela abaixo).
 ## Decisões de design
 
 - Os handlers são **stateless** (sem estado), exceto `CGIHandler`, que rastreia
-  o pid do seu processo filho. Eles são instanciados por servidor, não por
-  requisição.
+  o pid do seu processo filho. São instanciados **por requisição**: o dispatch
+  de `Server::handleRead` cria o handler numa variável local, dentro do próprio
+  `handle(...)`.
 - Tudo é compatível com **C++98** e segue as convenções do projeto
   (nomenclatura `_member`, acessores `get_x()`, casts `(void)` em
   parâmetros não usados).
@@ -96,16 +97,18 @@ explicação completa.
 | `CGIHandler` | **implementado + testado** (síncrono; NEED_CGI p/ integração futura) | `CGI_HANDLER.md` |
 
 Regressão: `test/handler_test.cpp` (compilar à parte, instruções no
-cabeçalho do ficheiro). 80 testes, todos verdes.
+cabeçalho do ficheiro). 81 testes, todos verdes.
 
 Ligação ao `Server` (despacho, ordem de checks, smoke tests):
 ver **`INTEGRATION_ROUTER.md`** — o checklist para quem faz o router.
 
-`Locations` ganhou os acessores stub acordados (`getRedirect`,
-`getRedirectCode`, `getRoot`, `getIndexes`, `getAutoindex`,
-`getUploadStore`, `getCgiExtensions` + setters) — o parser de config
-preenche-os; enquanto não o fizer, os handlers degradam com respostas
-correctas (500 no redirect, herança do server no static).
+`Locations` expõe `getPath`/`setPath`, `getAllowedMethods`/`setAllowedMethod`,
+`getReturn`/`setReturn(code, target)`, `getRoot`/`setRoot`,
+`getIndexes`/`setIndex`, `getAutoIndex`/`setAutoIndex`,
+`getUploadStore`/`setUploadStore`, `getCgiExtension`/`setCgiExtension`,
+`getCgiPath`/`setCgiPath` e `erase()` — e o parser de config **preenche-os**
+(`handleLocation*` → `addLocation`). O redirect só dá 500 quando a location
+não tem `return` configurado.
 
 Também na base (`Handler`): `notAllowed()` (405 + `Allow`), `isFile()`,
 `isDirectory()` — partilhados por todos os handlers que mexem em ficheiros.

@@ -12,7 +12,7 @@ Estado: **implementado e testado** (8 testes em `test/handler_test.cpp`).
 ## 1. Contrato — o que este handler decide e o que NÃO decide
 
 Quando o router despacha um pedido para o `RedirectHandler`, a location
-**é** um redirect: o parser preencheu `setRedirect(target, code)` a
+**é** um redirect: o parser preencheu `setReturn(target, code)` a
 partir de um `return <code> <target>` (estilo nginx). O handler:
 
 - **decide**: o código exato da resposta (o configurado), o valor do
@@ -75,17 +75,17 @@ com clientes que não seguem.
 
 ## 4. Integração com a config (lado da config por ligar)
 
-`Locations` tem os campos placeholder acordados com quem faz a camada
-de config:
+`Locations` guarda o redirect num `map<int, string>` preenchido pela camada de
+config:
 
 ```cpp
-void setRedirect(const std::string &target, int code);  // parser chama isto
-const std::string& getRedirect() const;                 // "" = não configurado
-int getRedirectCode() const;                            // 0 = não configurado
+void setReturn(const int &code, const std::string &target);  // parser chama isto
+std::map<int, std::string> getReturn() const;                // vazio = não configurado
 ```
 
-O parser deve chamar `setRedirect(target, code)` uma vez por diretiva
-`return <code> <target>`. Enquanto ninguém chamar, o handler responde
+O parser chama `setReturn(code, target)` uma vez por diretiva
+`return <code> <target>`; o handler usa a **primeira** entrada do mapa (o menor
+código), por isso mais do que uma `return` na mesma location é ambíguo. Enquanto ninguém chamar, o handler responde
 500 (ver §2) — nunca um redirect silencioso para o vazio.
 
 ## 5. O que foi verificado
@@ -97,8 +97,8 @@ Testes em `test/handler_test.cpp`:
 - target relativo + Host do pedido → `http://site1.com:8080/new`
   (a versão com join de path falhou aqui e foi corrigida, §3);
 - HEAD → status 301 + Location, corpo vazio;
-- `setRedirect("/new", 200)` → 500 (code não-3xx);
+- `setReturn(200, "/new")` → 500 (code não-3xx);
 - location sem config nenhuma → 500 (target vazio);
-- 8 testes próprios + os partilhados do suite (80 no total).
+- 8 testes próprios + os partilhados do suite (81 no total).
 
 `make` limpo com `-Wall -Wextra -Werror -std=c++98`.

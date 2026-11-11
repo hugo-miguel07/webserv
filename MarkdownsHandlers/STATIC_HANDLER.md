@@ -6,7 +6,7 @@ Documentação de estudo do `StaticHandler` (`includes/StaticHandler.hpp` +
 preenchido, `Response` sai montada).
 
 Estado: **implementado e testado** — 20 testes próprios + 8 do listing
-(numa suite de regressão de 80 em `test/handler_test.cpp`, compilada à
+(numa suite de regressão de 81 em `test/handler_test.cpp`, compilada à
 parte, não entra no `make` do webserv).
 
 ---

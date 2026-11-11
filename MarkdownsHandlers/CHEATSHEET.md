@@ -48,7 +48,7 @@ Root usada: `loc.getRoot()` se não vazia, senão `srv.getRoot()` (padrão em to
 |---|---|
 | `buildError(Response&, int)` | `res.clear()` **primeiro** (nunca deixar headers de meio-de-caminho escapar para a página de erro) + `res.setError(code)` |
 | `notAllowed(Response&, const Locations&)` | 405 + header `Allow` com os métodos da location (RFC 7231 §6.5.5). Ordem: `buildError` **depois** set `Allow` |
-| `resolvePath(root, requestPath, outPath)` → `bool` | Junta root + path **segmento a segmento**: colapsa `.`, resolve `..` (se escapar à root → `false`), rejeita NUL embutido. Root normalizada sem `/` final. O path já chega percent-decoded do parser |
+| `resolvePath(root, requestPath, outPath)` → `bool` | Junta root + path **segmento a segmento**: colapsa `.`, resolve `..` (se escapar à root → `false`), rejeita NUL embutido. Root normalizada sem `/` final. O path **não** é percent-decoded: `%2e%2e` é o nome literal de um ficheiro, não `..` (ver `REQUEST_RESPONSE.md` §1.7) |
 | `isMethodAllowed(req, loc)` → `bool` | Lista vazia de `allow_methods` = **tudo permitido** (estilo nginx). Senão, compara método a método |
 | `isFile(path)` → `bool` | `stat()` + `S_ISREG` (segue symlinks). `false` se não existir |
 | `isDirectory(path)` → `bool` | `stat()` + `S_ISDIR`. `false` se não existir |
@@ -145,7 +145,7 @@ Notas: entradas de diretórios ficam **sem** `/` final — o click gera pedido s
 
 | Função | O que faz |
 |---|---|
-| `handle(req, res, srv, loc)` | `loc.getRedirect()` vazio ou `getRedirectCode()` == 0 → **500** (config mal feita, não é `ERROR` — a ligação está bem). Código fora de [300, 399] → 500. Senão: status 3xx + `Location` + página HTML mínima (sem corpo se HEAD) |
+| `handle(req, res, srv, loc)` | Usa a **primeira** entrada de `loc.getReturn()` (o menor código); mapa vazio, target vazio ou código 0 → **500** (config mal feita, não `ERROR` — a ligação está bem). Código fora de [300, 399] → 500. Senão: `res.clear()`, status 3xx + `Location` + página HTML mínima (sem corpo se HEAD) |
 | `buildTarget(req, redirectConfig)` | Semântica `return` do nginx: config com `://` → usada verbatim (redirect absoluto); senão → `"http://" + header Host + target` (mesmo host). O target **nunca** é concatenado com o path do pedido. Sem Host (HTTP/1.0) → target nu (Location relativa válida) |
 
 ---
@@ -162,7 +162,7 @@ Constantes: timeout **5000 ms** (um deadline único para a troca toda, não por 
 3. `resolvePath` → 403 (traversal nunca chega ao `execve`)
 4. `isScript` → 400 (recurso não-CGI numa location CGI)
 5. `isFile` → 404
-6. `getCgiInterpreter()` vazio → 500 (interpretador vem da config do **servidor**, nunca do cliente)
+6. `getCgiPath()` vazio → 500 (interpretador vem da location, nunca do cliente)
 7. `launch()` falho → 500 + **`ERROR`** (o servidor é que está partido, ex. fds esgotados)
 8. feed stdin (tolerante a EPIPE) → fechar write end (EOF para o filho) → read stdout com deadline + size cap
 9. reap com `waitpid(WNOHANG)` em loop de 20 ms; se passar o deadline → `SIGKILL` + `waitpid`
@@ -170,7 +170,7 @@ Constantes: timeout **5000 ms** (um deadline único para a troca toda, não por 
 
 | Função/membro | O que faz |
 |---|---|
-| `isScript(filePath, extensions)` → `bool` | Extensão do ficheiro (lowercased, com ponto) ∈ `cgi_extensions` (tolera config com ou sem `.`). Lista vazia → `false` |
+| `isScript(filePath, extensions)` → `bool` | Recebe um `vector<string>` de extensões que o `handle` monta a partir de `loc.getCgiExtension()` (um valor por location); compara a extensão do ficheiro em minúsculas, com ponto (tolera config com ou sem `.`). Lista vazia → `false` |
 | `buildEnv(interpreter, scriptPath, req)` → `char**` | Metavariáveis RFC 3875: `GATEWAY_INTERFACE=CGI/1.1`, `SERVER_SOFTWARE`, `SERVER_PROTOCOL`, `SERVER_PORT` (vazio — preenchido na integração), `REQUEST_METHOD`, `QUERY_STRING`, `PATH_INFO`, `SCRIPT_NAME`, `SCRIPT_FILENAME`, `CONTENT_LENGTH` (se body), `CONTENT_TYPE`, e passthrough `HTTP_USER_AGENT` / `HTTP_ACCEPT` / `HTTP_COOKIE`. Strings vivem em `_envStore` (membro) — o array só guarda `c_str()` |
 | `freeEnv(env)` | `delete[]` só do array de ponteiros (as strings são do `_envStore`) |
 | `launch(scriptPath, interpreter, req)` → `bool` | 2 × `pipe()` → `fork()`. **Filho**: `dup2` stdin←body, stdout→CGI; fecha os 4 fds originais; `argv = { interpreter, script, NULL }` (**o script tem de ser argumento do interpretador** — sem isto o `python3` lê o body como programa e tudo degrada para 502!); `execve`; falhou → `_exit(127)`. **Pai**: guarda pid, fecha extremos opostos, `fcntl O_NONBLOCK` nos dois (poll() nunca pode bloquear o servidor) |
@@ -216,24 +216,33 @@ Constantes: timeout **5000 ms** (um deadline único para a troca toda, não por 
 
 ## 8. Request
 
-Estado interno: `_valid` (último parse ok?) e `_errorStatus` (default 400).
+Campos públicos: `method`, `path`, `query`, `body`, `version`, `headers` (map
+de chaves **lowercase**). O estado do handshake vive em privados:
+`_hasContent`, `_hasTransferEncoding`, `_contentLen`, `_body`,
+`_nextRequestBytes`, `_requestLine`, `_headers`, `_server`, `_serverName`.
 
-Limites: secção de headers **8192 bytes** (`MAX_HEADER_BYTES`); target **2048 bytes** (`MAX_URI_BYTES`).
+Não há `_valid` nem `_errorStatus`: o parser **lança** `std::runtime_error` e o
+`catch` do `Server::handleRead` responde **400**. Também não há limites de 8192
+(headers) nem 2048 (target) — o buffer cresce até o corpo estar completo.
 
 | Função | O que faz |
 |---|---|
-| `parse(raw)` → `bool` | Fluxo: `findHeaderEnd` (tolera `\r\n\r\n` e `\n\n`) → headers >8k → **431** → request line têm de ter **exatamente 3 tokens** (`method target version`) → método ∈ {GET, HEAD, POST, PUT, DELETE, OPTIONS}, senão **501** → versão `HTTP/1.0`/`HTTP/1.1`; `HTTP/algo` → **505** → target ≤ 2048 → **414** → absolute-form `http(s)://` é tolerado (host extraído para o header `host`, path reescrito) mas depois só serve origin-form `/<path>` (asterisk/authority → 400) → split path/query no primeiro `?` → `urlDecode(path)` (escape malformado → 400) → headers: nome **lowercased**, valor casing original, repetidos combinados com `", "`; linha que começa por space/tab (folding obsoleto) → 400 → framing: Content-Length **e** Transfer-Encoding juntos → 400 (anti request smuggling); chunked → `walkChunked`; body decodificado para `body`; sem framing em POST/PUT → **411**; Content-Length inválido/não-dígitos → 400 |
-| `isComplete(buf)` *(static)* | Diz ao Server se o buffer já contém um request completo (headers + body). Headers incompletos → devolve `true` quando o buffer passa 8k (o server responde 431 em vez de bufferizar para sempre). Chunked → `walkChunked == OK`. Content-Length → `buf.size() - bodyStart >= length`; CL > 12 dígitos (~1TB) nunca está completo |
-| `peekContentLength(buf)` *(static)* | Content-Length declarado, a partir de headers possivelmente incompletos: 0 se nada recebido/valor inválido; > 12 dígitos → sentinel `size_t(-1)`. Serve para o Server aplicar `client_max_body_size` **antes** de bufferizar o corpo |
-| `getHeader(name)` | Lookup case-insensitive (map já está lowercase, devolve `""` se ausente) |
-| `hasBody()` | body não vazio |
-| `getContentLength()` | Content-Length do header; 0 se ausente/inválido/> 12 dígitos |
-| `urlDecode(s, plusAsSpace)` *(static)* | `%XX` → byte; escape incompleto/inválido → `""`; `+` → espaço só quando `plusAsSpace` (convenção da query) |
-| `isValid()` / `getErrorStatus()` / `clear()` | Estado do último parse / reset de todos os campos |
+| `checkHeader(buffer)` → `bool` | `true` quando o buffer contém `"\r\n\r\n"` (só CRLF: um cliente que mande `\n\n` fica preso). Lê `Content-Length` / `Transfer-Encoding` dos headers **crus** e acende `_hasContent` / `_hasTransferEncoding` |
+| `readingBody(buffer)` → `void` | Valida e guarda o enquadramento: CL só com dígitos (senão lança) e TE **exatamente** `chunked` (case-sensitive; senão lança). É chamada duas vezes — aqui e dentro de `start_parsing` |
+| `checkingBody_framing(buffer)` → `bool` | Content-Length: compara os bytes a seguir ao fim dos headers com `_contentLen`. Menor → `false` (espera mais `recv`); maior → imprime `"too many bytes"`, guarda `_nextRequestBytes` (que nunca é lido) e devolve `true` |
+| `checkingBody_chuncked(buffer)` → `bool` | Chunked: `true` quando o terminador (`0` + CRLF + trailers) já está no buffer (grafia `chuncked` é a do código) |
+| `start_parsing(buffer)` → `void` | Interpreta de facto: request line, query, headers, `Host` e corpo; preenche os campos públicos |
+| `RequestLineParsing` · `QueryParsing` · `HeadersToMap` · `HostParsing` · `parseBody` · `parseChunkedBody` | Peças de `start_parsing`, públicas e chamáveis à parte |
+| `MethodParsing(method)` | Nome enganador: não olha ao método (`(void)method`) — escolhe a `Locations` de **prefixo mais longo** cujo path case com fronteira de `/`, e lança `"Location not found"` se nenhuma casar |
+| `getHasContentStatus()` / `getTransferEncodingStatus()` | Se vieram `Content-Length` / `Transfer-Encoding` nos headers |
+| `getContentLength()` | `_contentLen`, preenchido por `readingBody` |
+| `getHeader(name)` | Lookup no map; como as chaves ficam **lowercase** e o argumento não é normalizado, `getHeader("Host")` devolve `""` |
 
-Helpers internos (namespace anónimo no `.cpp`): `toLower`, `trim`, `isToken`/`isTokenChar` (RFC token), `isDigits`, `isKnownMethod`, `splitLines` (partir em `\n` + tirar um `\r` final por linha), `splitTokens`, `splitHeader` (`Name: value`, nome tem de ser token), `findHeaderEnd`, `getFramingHeaders`.
-
-`walkChunked(s, pos, bodyOut, endPos)` — enum `CHUNK_OK` / `CHUNK_INCOMPLETE` / `CHUNK_BAD`: linha de tamanho hex (≤ 8 dígitos, extensões de chunk após `;` ignoradas), `0\r\n` termina (trailer opcional até linha vazia), cada chunk seguido de CRLF obrigatório. Incompleto = precisamos de mais bytes.
+Não existem `parse()`, `isComplete()`, `peekContentLength()`, `hasBody()`,
+`urlDecode()`, `isValid()`, `getErrorStatus()` nem `clear()`: a API que a versão
+anterior desta tabela descrevia nunca foi escrita (ver `REQUEST_RESPONSE.md`
+§1.2). O único código de erro do parser é **400** — 411/414/431/501/505 não são
+emitidos.
 
 ## 9. Response
 
@@ -256,53 +265,100 @@ Um bloco `location { }`. Documentação da Parte 1 cobre como os handlers a usam
 | Par | Uso |
 |---|---|
 | `getPath` / `setPath` | prefixo da location (fill pelo parser) |
-| `getAllowedMethods` / `addAllowedMethod` | um por token de `allow_methods` |
-| `getRedirect` / `getRedirectCode` / `setRedirect(target, code)` | uma chamada por `return <code> <target>` (nginx) |
-| `getRoot`/`setRoot` · `getIndexes`/`addIndex` · `getAutoindex`/`setAutoindex` | static + listing |
+| `getAllowedMethods` / `setAllowedMethod` | um por token de `allow_methods` (o nome é `set`, mas faz `push_back`) |
+| `getReturn` / `setReturn(code, target)` | `map<int, string>`; uma chamada a `setReturn` por `return <code> <target>` (estilo nginx) |
+| `getRoot`/`setRoot` · `getIndexes`/`setIndex` · `getAutoIndex`/`setAutoIndex` | static + listing |
 | `getUploadStore` / `setUploadStore` | upload |
-| `getCgiExtensions`/`addCgiExtension` · `getCgiInterpreter`/`setCgiInterpreter` | CGI |
+| `erase()` | Limpa todos os campos antes de um novo bloco `location` (`handleLocation` chama-a) |
+| `getCgiExtension`/`setCgiExtension` · `getCgiPath`/`setCgiPath` | CGI (um valor por location, não vectores) |
 
 Convenção: vazio/0/false = herdar do server — **excepto DELETE** (fail closed, §4).
 
 ## 11. Cascata de Config (Pessoa A)
 
-`Config.parse(filename)` → `ConfigFile.read_and_append` → `ConfigParser.tokenize` → `parseServers` → `vector<ServerConfig>`.
+`Config.parse(filename)` → `ConfigFile.read_and_append` → `Tokenize::tokenize` →
+`parseServers` → `vector<ServerConfig>`.
 
 | Classe | Função | O que faz |
 |---|---|---|
-| `Config` | `parse(filename)` | Orquestra as três classes; guarda `_servers` (devolve sempre `true`!) |
-| `ConfigFile` | `openFile` / `read_and_append` | `open(O_RDONLY)` + loop `read` de 1KB; tudo vai para `_inputText`; `get_str` devolve a ref |
-| `ConfigParser` | `tokenize(input)` | `{`, `}` e `;` viram tokens isolados; whitespace é delimitador |
-| `ConfigParser` | `parseServers(tokens)` | Percorre tokens; a cada `server` consome o bloco com `parseServerInfo` |
-| `ConfigParser` | `parseServerInfo(tokens, i)` | `bracket_count` trata `{}` aninhados; directives: `listen` (1–65535, senão msg de erro **e continua**), `client_max_body_size` (via `atoi` — **sem suporte a sufixos k/m**), `server_name` e `index` (listas até `;`), `root` |
-| `ServerConfig` | getters/setters | port, bodySize, root, host, index (vector: aceita múltiplos), serverName |
+| `Config` | `parse(filename)` | Orquestra as três classes e guarda o resultado em `_servers`; é **`void`** — não devolve estado, lança em erro |
+| `ConfigFile` | `openFile` / `read_and_append` | `open(O_RDONLY)` + loop `read` de 1KB até EOF; tudo vai para `_inputText`; `get_str` devolve a referência |
+| `ConfigParser` | `tokenize` | `{`, `}` e `;` viram tokens isolados; whitespace delimita |
+| `ConfigParser` | `parseServers(tokens)` | Exige um bloco `server` em cada iteração (senão lança) e lança se não houver nenhum |
+| `ConfigParser` | `parseServerInfo(tokens, i)` | `bracket_count` para `{}` aninhados; directives: `listen` (só dígitos, 1–65535, senão **lança**), `root` (valor único), `index` e `server_name` (listas até `;`), `client_max_body_size`, `error_page <código> <ficheiro>;` (código limitado a 400/403/404/405/413/500/501) e `location <path> { … }`. Token desconhecido → `"Directive not allowed in server"`, não é ignorado |
+| `ServerConfig` | getters/setters | port, bodySize, root, index e serverName (vectors), errorPages (`map<int, string>`) e locations (`addLocation` / `getLocations`) |
 
-**Ainda por fazer no parser**: locations não são preenchidas (`setLocations()` é um placeholder sem corpo em `ServerConfig`) — redirect, autoindex, `upload_store`, `cgi_*` e `error_pages` não têm directiva. Os handlers degradam corretamente (alterna herança do server, redirect/upload → 500).
+`client_max_body_size` passa por `parseBodySizeWeight`: dígitos mais um sufixo
+opcional **K**, **M** ou **G** com multiplicadores **decimais** (×1000, ×10⁶, ×10⁹ —
+não 1024). `0`, sufixo desconhecido e overflow de `size_t` lançam.
 
-⚠️ **Debug output ativo**: `ConfigFile` imprime o ficheiro todo e `parseServerInfo` imprime port/names/root/indexes — era código comentado, a limpeza transformou-o em comportamento. Silenciar antes da eval.
+**Dentro de `location <path> { … }`** o parser preenche uma `Locations` completa:
+`handleLocation` faz `_loc.erase()` no início, consome as directivas permitidas e
+`handleLocationDirective` guarda-a com `_serv.addLocation(...)`.
+
+| Directiva de location | Efeito |
+|---|---|
+| `root` | `setRoot` — ausente, o handler herda o root do server |
+| `index` | `setIndex` por token (lista, até `;`) |
+| `allow_methods` | `setAllowedMethod` por token; só `GET`, `POST` e `DELETE` — outro método **lança** |
+| `return <código> <target>` | `setReturn` (`map<int, string>`); código 100–599 e **target obrigatório** |
+| `autoindex on` | `setAutoIndex(true)`; `autoindex off` não faz nada (o default já é `false`); outro valor **lança** |
+| `upload_store` | `setUploadStore` |
+| `cgi_extension` / `cgi_path` | `setCgiExtension` / `setCgiPath` |
+
+Directiva fora desta lista dentro de um `location` → `"Directive not allowed in
+location"`. Duas pontas soltas: `setLocations()` continua declarado em
+`ServerConfig.hpp` **sem definição nem uso** (resíduo — quem preenche é
+`addLocation`), e `error_page` é **guardado** em `_errorPages` mas nenhum handler lê
+`getErrorPages()` (só o `debugServers`); o `buildError` continua a usar o HTML fixo
+do `Response`.
+
+O parser de config é **silencioso**: a impressão do ficheiro em `ConfigFile`, as chamadas a
+`debugServers()` / `debugLocations()` e a `Tokenize::debug()` estão todas comentadas — `Tokenize::debug()` existe mas ninguém a chama.
 
 ## 12. Server + Client (rede, Pessoa A)
 
-`main.cpp` (estado atual): lê `argv[1]`, chama `config.parse` e **não arranca servidor nenhum** — o bloco `sig_handler + init + run` estava comentado e foi removido pela limpeza. Ligação: `INTEGRATION_ROUTER.md`.
+`main.cpp`: lê `argv[1]` e recusa `argc < 2` / `argc > 2` com mensagem em
+`stderr`; depois `config.parse(argv[1])`, `signal(SIGINT, sig_handler)`,
+`Server server(config)`, `server.init()` e `server.run()` — **arranca o servidor**.
+Tudo o que corre mal (`socket`, `bind`, `listen`, `accept`, `poll`, `send`, config)
+chega ao `catch` do `main` como `std::runtime_error`, que imprime e devolve −1.
+
+Estrutura: `Listener` = `{ fd, port, vector<ServerConfig> configs }`, um por
+**porta**. O `Server` guarda `_listeners`, `_server_fds`, `_clients`, `_pollfds`,
+`_removeClients` e a `_config`.
 
 | Server | O que faz |
 |---|---|
-| `init()` | `socket` → `fcntl(O_NONBLOCK)` → `bind` (INADDR_ANY, port via `htons`) → `listen(SOMAXCONN)` → primeiro `pollfd` (server fd, POLLIN) |
-| `run()` | Enquanto `g_running`: `enablePollOut()` (liga POLLOUT a quem tem resposta pronta) → `poll(-1)` bloqueante → por cada revent: POLLIN (fd do server ? `acceptClient` : `handleRead`), POLLOUT → `handleWrite` → `removeClients` → `shut_down` no fim |
-| `acceptClient()` | `accept` → nonblock → push `Client` + `pollfd` POLLIN |
-| `handleRead(client)` | `recv` 4KB → `>0`: append + **`mirror()` + `setResponseReady(true)`** (echo-server provisório!) — é aqui que entra o router: `Request::isComplete` → `parse` → server por Host/porta → location → handler; `==0`: marcar para remoção |
-| `handleWrite(client)` | `send` a partir de `_responseOffset`; parcial continua no próximo POLLOUT; completo → `disablePollOut` |
-| `removeClients()` / `getClientById(fd)` / `shut_down()` | Elimina clientes mortos (fecha fd, limpa pollfds) / procura linear por fd / fecha tudo (clients, pollfds, server fd) |
+| `init()` | Por cada `ServerConfig`: `FindListener(port)` reutiliza o fd se a porta já existe e só acrescenta o config à lista (é assim que dois `server {}` na mesma porta coexistem). Porta nova: `socket` → `setsockopt(SO_REUSEADDR)` → `fcntl(O_NONBLOCK)` → `bind` (`INADDR_ANY`) → `listen(SOMAXCONN)` → `Listener` + `pollfd` POLLIN |
+| `run()` | `while (g_running)`: `enablePollOut()` (liga/desliga POLLOUT conforme `getResponseReady()`) → `poll(-1)` → itera sobre um **snapshot** de `_pollfds.size()` (o `acceptClient` faz `push_back` durante o ciclo) → POLLIN: fd de servidor ? `acceptClient` : `handleRead`; POLLOUT → `handleWrite` → `removeClients()`. Nota: `poll` devolver −1 **lança** também no SIGINT (`"Process finished by SIGINT"`), por isso Ctrl-C sai pelo `catch` do `main` com −1 |
+| `acceptClient(fd)` | `accept` → `fcntl(O_NONBLOCK)` → encontra o `Listener` pelo fd (senão lança `"Listener not found"`) → `Client(fd, listener)` + `pollfd` POLLIN |
+| `handleRead(client)` | `recv` 4KB → `appendRequest` → **um `Request` novo por `recv`** (entre chamadas só persiste `Client::_requestBuffer`) → `checkHeader` → CL+TE juntos → exceção → `readingBody` → `checkingBody_framing` / `checkingBody_chuncked` → `start_parsing` → dispatch → `response.toString()` + `appendResponse` + `setResponseReady(true)`. Exceção do parser → `Response::setError(400)` enviado logo, sem handler. `recv == 0` → `_removeClients`; `recv < 0` só imprime |
+| dispatch (inline em `handleRead`) | Escolhe a `Locations` de **prefixo mais longo** com fronteira de `/`: `return` configurado → `RedirectHandler`; método fora de `allow_methods` → `StaticHandler` (para produzir o 405); extensão CGI → `CGIHandler`; `GET`/`HEAD` → `StaticHandler`; `POST` → `UploadHandler`; `DELETE` → `DeleteHandler`; resto → `StaticHandler`. O `else` "sem location" (StaticHandler com `Locations()` default) é código morto na prática: sem locations, `Request::MethodParsing` já lançou `Location not found` → 400 |
+| `handleWrite(client)` | `send` a partir de `_responseOffset` (−1 lança `"Error on send()"`); ao chegar ao fim → `disablePollOut`; parcial continua no próximo POLLOUT |
+| `removeClients()` / `getClientById(fd)` / `FindListener(port)` / `isServerFd(fd)` | Fecha e apaga os fds marcados (cliente + `pollfd`) / procura linear / reutilização de fd por porta / distingue fds de escuta dos de cliente |
+| `shut_down()` | Chamado pelo **destrutor** do `Server` (o `main` não o chama): fecha clientes, todos os `pollfd` e os `_server_fds`. Os mesmos fds aparecem em listas sobrepostas, por isso há `close()` repetido — silencioso, o retorno não é verificado |
 
 | Client | O que faz |
 |---|---|
-| buffers + `_responseOffset`/`_responseReady` | requestBuffer (bruto), responseBuffer (a enviar) |
-| `appendRequest` / `appendResponse` | `append(buffer, bytes)` |
-| getters/setters | fd, buffers, offset, ready |
-| `mirror()` | `_responseBuffer = _requestBuffer` — marcado para apagar quando o router entrar |
+| campos | `_fd`, `_requestBuffer` (bruto, nunca aparado), `_responseBuffer` (a enviar), `_responseOffset`, `_responseReady`, `_listener`, `_config` |
+| `appendRequest` / `appendResponse` | `append(buffer, total_bytes)`; ignoram `buffer == NULL` |
+| getters/setters | fd, buffers, offset, ready, `listener`, `config` — `_config` é **ponteiro**: `getConfig()` antes de `setConfig()` desreferencia NULL |
+| `requestComplete()` | Declarado em `Client.hpp` e **nunca definido** no `.cpp`, nem chamado por ninguém: resíduo da API antiga |
 
-### Estado de ligação entre camadas (a integrar)
+O que **não** existe: `mirror()` (o echo provisório foi removido) e keep-alive /
+pipelining — `_requestBuffer` e `_responseBuffer` nunca são limpos, cada `recv`
+volta a varrer o buffer desde o início e a resposta só fica pronta com o pedido
+completo.
 
-1. **`Server::handleRead` → Request/Response/handlers**: hoje só echo. Substituir `mirror()` por: `isComplete(reqBuf)` → `parse` → seleção de server/location → `handle(...)` → `appendResponse(res.toString())` + `setResponseReady`.
-2. **Múltiplos servers/listen**: `Server` tem um único fd; `Config` já devolve uma lista — um `Server` por `ServerConfig` ou um dispatcher único.
-3. **`SERVER_PORT` do CGI** está vazio à espera desta integração.
+### Estado de ligação entre camadas
+
+1. **`Server::handleRead` → `Request`/handlers**: **feito**, com o dispatch inline
+   em `handleRead`. O mesmo cálculo de prefixo mais longo existe também em
+   `Request::MethodParsing`, chamado por `start_parsing` — aí só valida (e lança);
+   quem escolhe o handler é o `Server`.
+2. **Múltiplos servers/listen**: **feito** por porta, com um `Listener` partilhado
+   por porta; a escolha do `ServerConfig` pelo `Host` acontece dentro do `Request`
+   (`HostParsing`), não no `Server`.
+3. **`SERVER_PORT` do CGI**: continua vazio porque `Request::version` nunca é
+   preenchido (ver `REQUEST_RESPONSE.md` §1.1) — não é integração que falte.

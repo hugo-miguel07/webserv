@@ -122,7 +122,7 @@ int main()
     // ---------------- RedirectHandler ---------------------------------
     {
         Locations loc = makeLoc("/old");
-        loc.setRedirect("https://example.com", 301);
+        loc.setReturn(301, "https://example.com");
 
         Response res;
         redirecter.handle(makeReq("GET", "/old/page", "site1.com:8080"),
@@ -137,7 +137,7 @@ int main()
                "redirect: html content type");
 
         Locations rel = makeLoc("/old");
-        rel.setRedirect("/new", 302);
+        rel.setReturn(302, "/new");
         redirecter.handle(makeReq("GET", "/old/page", "site1.com:8080"),
                           res, srv, rel);
         expect(res.statusCode == 302 &&
@@ -145,13 +145,13 @@ int main()
                "redirect: relative target prefixed with request host");
 
         Locations head = makeLoc("/old");
-        head.setRedirect("/new", 301);
+        head.setReturn(301, "/new");
         redirecter.handle(makeReq("HEAD", "/old", ""), res, srv, head);
         expect(res.statusCode == 301 && res.body.empty(),
                "redirect: HEAD has Location but no body");
 
         Locations bad = makeLoc("/old");
-        bad.setRedirect("/new", 200);
+        bad.setReturn(200, "/new");
         redirecter.handle(makeReq("GET", "/old", ""), res, srv, bad);
         expect(res.statusCode == 500,
                "redirect: non-3xx configured code -> 500");
@@ -199,7 +199,7 @@ int main()
                "static: index served for slashed dir");
 
         Locations autoOn = makeLoc("/emptydir");
-        autoOn.setAutoindex(true);
+        autoOn.setAutoIndex(true);
         staticHandler.handle(makeReq("GET", "/emptydir/", ""), res, srv, autoOn);
         expect(res.statusCode == 200 && contains(res.body, "Index of /emptydir/"),
                "static: autoindex on -> listing");
@@ -227,15 +227,15 @@ int main()
                "static: POST (empty list) -> 405 Allow GET, HEAD (nginx parity)");
 
         Locations postOnly = makeLoc("/sub");
-        postOnly.addAllowedMethod("POST");
+        postOnly.setAllowedMethod("POST");
         staticHandler.handle(makeReq("GET", "/file.txt", ""), res, srv,
                              postOnly);
         expect(res.statusCode == 405 && res.headers["Allow"] == "POST",
                "static: GET on POST-only location -> 405 Allow POST");
 
         Locations methods = makeLoc("/sub");
-        methods.addAllowedMethod("GET");
-        methods.addAllowedMethod("HEAD");
+        methods.setAllowedMethod("GET");
+        methods.setAllowedMethod("HEAD");
         staticHandler.handle(makeReq("DELETE", "/file.txt", ""), res, srv,
                              methods);
         expect(res.statusCode == 405 && res.headers["Allow"] == "GET, HEAD",
@@ -318,7 +318,7 @@ int main()
         mkdir(store.c_str(), 0755);
 
         Locations up = makeLoc("/upload");
-        up.addAllowedMethod("POST");
+        up.setAllowedMethod("POST");
         up.setUploadStore(store);
 
         Request post = makeReq("POST", "/upload", "");
@@ -453,8 +453,8 @@ int main()
         writeFile(root + "/secret2.txt", "nope");
 
         Locations allowDel = makeLoc("/d");
-        allowDel.addAllowedMethod("DELETE");
-        allowDel.addAllowedMethod("GET");
+        allowDel.setAllowedMethod("DELETE");
+        allowDel.setAllowedMethod("GET");
 
         deleter.handle(makeReq("DELETE", "/deleteme.txt", ""), res, srv,
                        allowDel);
@@ -484,7 +484,7 @@ int main()
                "delete: traversal target intact");
 
         Locations getOnly = makeLoc("/d");
-        getOnly.addAllowedMethod("GET");
+        getOnly.setAllowedMethod("GET");
         writeFile(root + "/protected.txt", "safe");
         deleter.handle(makeReq("DELETE", "/protected.txt", ""), res, srv,
                        getOnly);
@@ -502,7 +502,7 @@ int main()
                "delete: file untouched (empty list)");
 
         Locations delOnly = makeLoc("/d");
-        delOnly.addAllowedMethod("DELETE");
+        delOnly.setAllowedMethod("DELETE");
         deleter.handle(makeReq("GET", "/protected2.txt", ""), res, srv,
                        delOnly);
         expect(res.statusCode == 405 && res.headers["Allow"] == "DELETE",
@@ -561,8 +561,8 @@ int main()
 
         Locations cgiLoc = makeLoc("/cgi-bin");
         cgiLoc.setRoot(cgiDir);
-        cgiLoc.setCgiInterpreter("/usr/bin/python3");
-        cgiLoc.addCgiExtension(".py");
+        cgiLoc.setCgiPath("/usr/bin/python3");
+        cgiLoc.setCgiExtension(".py");
 
         // 1. simple success
         cgi.handle(makeReq("GET", "/ok.py", ""), res, srv, cgiLoc);
@@ -638,15 +638,15 @@ int main()
         // 13. no interpreter configured -> 500
         Locations noInt = makeLoc("/cgi-bin");
         noInt.setRoot(cgiDir);
-        noInt.addCgiExtension(".py");
+        noInt.setCgiExtension(".py");
         cgi.handle(makeReq("GET", "/ok.py", ""), res, srv, noInt);
         expect(res.statusCode == 500, "cgi: no interpreter -> 500");
 
         // 14. interpreter that does not exist -> 502 (exit 127)
         Locations badInt = makeLoc("/cgi-bin");
         badInt.setRoot(cgiDir);
-        badInt.addCgiExtension(".py");
-        badInt.setCgiInterpreter("/nonexistent/interp");
+        badInt.setCgiExtension(".py");
+        badInt.setCgiPath("/nonexistent/interp");
         cgi.handle(makeReq("GET", "/ok.py", ""), res, srv, badInt);
         expect(res.statusCode == 502,
                "cgi: exec failure -> 502 (child exit 127)");

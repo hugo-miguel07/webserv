@@ -12,8 +12,17 @@ Handler::e_status RedirectHandler::handle(const Request &req, Response &res,
 {
     (void)srv;
 
-    const std::string &target = loc.getRedirect();
-    int code = loc.getRedirectCode();
+    const std::map<int, std::string> &returnMap = loc.getReturn();
+    int code = 0;
+    std::string target;
+
+    // Find the first redirect entry in the map
+    for (std::map<int, std::string>::const_iterator it = returnMap.begin(); it != returnMap.end(); ++it)
+    {
+        code = it->first;
+        target = it->second;
+        break;
+    }
 
     if (target.empty() || code == 0)
     {

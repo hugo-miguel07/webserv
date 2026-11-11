@@ -5,7 +5,7 @@ Documentação de estudo do `UploadHandler` (`includes/UploadHandler.hpp` +
 `STATIC_HANDLER.md` (o padrão dos dois 405, lá explicado — aqui reutilizado).
 
 Estado: **implementado e testado** — 15 testes próprios em
-`test/handler_test.cpp` (80 no total no suite).
+`test/handler_test.cpp` (81 no total no suite).
 
 ---
 
@@ -31,11 +31,13 @@ handle()
   └─ 6. saveFile()                     → 201 | 500
 ```
 
-O princípio: **rejeitar o mais cedo possível**. Um corpo de 10 GB num
-pedido sem `Content-Length` honesto nunca chega a ser parseado nem a
-tocar no disco — o 413 do passo 2 corta antes. É a mesma lógica do
-`resolvePath` antes do `stat()` no `StaticHandler`: validação barata
-primeiro, I/O só no fim.
+O princípio: **rejeitar o mais cedo possível dentro do handler**. Um corpo
+de 10 GB leva 413 antes de ser parseado como multipart e antes de tocar no
+disco. Mas atenção ao que "antes" quer dizer aqui: o corpo **já foi lido
+para memória** pelo `Request` antes de este `handle()` correr (ver
+`REQUEST_RESPONSE.md` §1.5) — o corte é antes do parsing e do I/O de
+escrita, não antes da leitura. É a mesma lógica do `resolvePath` antes do
+`stat()` no `StaticHandler`: validação barata primeiro, I/O caro depois.
 
 ### 413 com limite não configurado — fail closed
 
@@ -53,10 +55,12 @@ explícito, não há uploads. Para ter uploads, a config **tem** de
 declarar o limite — a escolha fica explícita em quem configura, não em
 quem ataca.
 
-Repara também: o check conta o `Content-Length` **declarado** (o Server
-pode rejeitar antes de receber o corpo todo — `Request::peekContentLength`
-existe para isso) *e* o tamanho **real** do corpo (a verdade quando o
-cliente mente no header). Os dois têm de caber no limite.
+Repara também: o check conta o `Content-Length` **declarado** *e* o
+tamanho **real** do corpo (a verdade quando o cliente mente no header).
+Os dois têm de caber no limite. O que não existe é rejeição antecipada: o
+`Server` não compara o `Content-Length` com o limite antes de ler, e o
+`Request` não expõe nada como `peekContentLength` — quando este check
+corre, o corpo inteiro já está em `req.body`. Ver `REQUEST_RESPONSE.md` §1.7.
 
 ## 3. Dois modos de upload
 
@@ -69,9 +73,11 @@ POST /upload/notas.txt        body = "conteúdo"
 → grava <upload_store>/notas.txt, 201 + Location: <store>/notas.txt
 ```
 
-`extractFilename()` faz `rfind('/')` no `req.path` (já
-percent-descodificado; a query string não faz parte do path — ver
-`REQUEST_RESPONSE.md` §1). Nome vazio (`POST /upload/`) → 400.
+`extractFilename()` faz `rfind('/')` no `req.path` (a query string não faz
+parte do path, que o `Request` corta no primeiro `?` — ver
+`REQUEST_RESPONSE.md` §1.4). O nome é usado **tal como vem no URL**, sem
+percent-decoding: `POST /upload/nota%201.txt` grava um ficheiro chamado
+literalmente `nota%201.txt`. Nome vazio (`POST /upload/`) → 400.
 
 ### Modo multipart (`boundary=` presente no Content-Type)
 

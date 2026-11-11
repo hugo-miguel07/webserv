@@ -11,7 +11,8 @@ INCDIR		= includes/
 # ================================= FILES =================================== #
 
 SRC_FILES	= main.cpp Client.cpp Server.cpp Config.cpp ServerConfig.cpp Locations.cpp ConfigFile.cpp ConfigParser.cpp \
-				Request.cpp Response.cpp trim.cpp Tokenize.cpp Listener.cpp\
+				Request.cpp Response.cpp trim.cpp Tokenize.cpp Listener.cpp \
+				UploadHandler.cpp Handler.cpp DeleteHandler.cpp DirectoryListingHandler.cpp RedirectHandler.cpp StaticHandler.cpp CGIHandler.cpp \
 			  
 			
 
