@@ -21,13 +21,16 @@
         srcs/ServerConfig.cpp srcs/StaticHandler.cpp \
         srcs/DirectoryListingHandler.cpp srcs/RedirectHandler.cpp \
         srcs/UploadHandler.cpp srcs/DeleteHandler.cpp srcs/CGIHandler.cpp \
+        srcs/trim.cpp srcs/Client.cpp \
         -o /tmp/handler_test && /tmp/handler_test
 */
 
 static int g_fail = 0;
+static int g_total = 0;
 
 static void expect(bool ok, const std::string &name)
 {
+    ++g_total;
     if (ok)
         std::cout << "[PASS] " << name << "\n";
     else
@@ -655,9 +658,10 @@ int main()
     // ---- cleanup ---------------------------------------------------------
     std::system(cmd.c_str());
 
-    std::cout << "\n" << (g_fail ? "FAILURES: " : "All tests passed. count=")
-              << (g_fail ? "" : "") << "\n";
     if (g_fail)
-        std::cout << g_fail << " test(s) failed\n";
+        std::cout << "\n" << g_fail << " of " << g_total
+                  << " test(s) failed\n";
+    else
+        std::cout << "\nAll tests passed. count=" << g_total << "\n";
     return g_fail ? 1 : 0;
 }

@@ -11,20 +11,17 @@
 #include <errno.h>
 
 
-namespace
-{
+static const int    CGI_TIMEOUT_MS = 5000;
+static const size_t CGI_MAX_OUTPUT = 10u * 1024u * 1024u;
 
-const int      CGI_TIMEOUT_MS = 5000;
-const size_t   CGI_MAX_OUTPUT = 10u * 1024u * 1024u;
-
-time_t nowMs()
+static time_t nowMs()
 {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return (static_cast<time_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000);
 }
 
-void closeEnd(int &fd)
+static void closeEnd(int &fd)
 {
     if (fd >= 0)
     {
@@ -33,13 +30,13 @@ void closeEnd(int &fd)
     }
 }
 
-void closePipePair(int *p)
+static void closePipePair(int *p)
 {
     closeEnd(p[0]);
     closeEnd(p[1]);
 }
 
-std::string toLowerCopy(const std::string &s)
+static std::string toLowerCopy(const std::string &s)
 {
     std::string out(s);
     for (size_t i = 0; i < out.size(); ++i)
@@ -48,7 +45,7 @@ std::string toLowerCopy(const std::string &s)
     return (out);
 }
 
-std::string trimCopy(const std::string &s)
+static std::string trimCopy(const std::string &s)
 {
     size_t b = s.find_first_not_of(" \t");
     if (b == std::string::npos)
@@ -57,7 +54,8 @@ std::string trimCopy(const std::string &s)
     return (s.substr(b, e - b + 1));
 }
 
-bool writeAllNonblocking(int fd, const std::string &data, time_t deadline)
+static bool writeAllNonblocking(int fd, const std::string &data,
+                                time_t deadline)
 {
     size_t off = 0;
     while (off < data.size())
@@ -86,8 +84,8 @@ bool writeAllNonblocking(int fd, const std::string &data, time_t deadline)
     return (true);
 }
 
-std::string readAllWithDeadline(int fd, time_t deadline,
-                                bool &timedOut, bool &tooBig)
+static std::string readAllWithDeadline(int fd, time_t deadline,
+                                       bool &timedOut, bool &tooBig)
 {
     std::string out;
     char buf[4096];
@@ -132,7 +130,7 @@ std::string readAllWithDeadline(int fd, time_t deadline,
     return (out);
 }
 
-bool parseCgiOutput(const std::string &raw, Response &res)
+static bool parseCgiOutput(const std::string &raw, Response &res)
 {
     size_t headEnd = raw.find("\r\n\r\n");
     size_t sepLen = 4;
@@ -198,8 +196,6 @@ bool parseCgiOutput(const std::string &raw, Response &res)
         return (false);
     res.setBody(body);
     return (true);
-}
-
 }
 
 
