@@ -1,21 +1,12 @@
 #include "Server.hpp"
 #include "Client.hpp"
 #include "Request.hpp"
-#include "Response.hpp"
-#include "Handler.hpp"
-#include "StaticHandler.hpp"
-#include "UploadHandler.hpp"
-#include "DeleteHandler.hpp"
-#include "DirectoryListingHandler.hpp"
-#include "RedirectHandler.hpp"
-#include "CGIHandler.hpp"
-#include <cstdio>
 
 Server::Server(const Config &config) : _config(config) {}
 
 Server::~Server() { this->shut_down(); }
 
-bool Server::init()
+bool Server::init() 
 {
     const std::vector<ServerConfig>& servers = _config.getServers();
     for (std::vector<ServerConfig>::const_iterator it = servers.begin(); it != servers.end(); ++it)
@@ -29,13 +20,6 @@ bool Server::init()
         int server_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (server_fd == -1)
             throw(std::runtime_error("Error on socket()"));
-        int reuse = 1;
-        if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR,
-                       &reuse, sizeof(reuse)) == -1)
-        {
-            close(server_fd);
-            throw(std::runtime_error("Error on setsockopt()"));
-        }
         if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1)
         {
             close(server_fd);
@@ -47,7 +31,6 @@ bool Server::init()
         address.sin_addr.s_addr = htonl(INADDR_ANY);
         if (bind(server_fd, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) == -1)
         {
-            perror("bind");
             close(server_fd);
             throw(std::runtime_error("Error on bind()"));
         }
@@ -160,17 +143,16 @@ void Server::removeClients()
 
 void Server::handleRead(Client &client)
 {
-    char    buffer[4096];
-    Request req(client);
+    char buffer[4096];
+    Request req(client.getListener().configs);
     bool    header_status;
+
 
     ssize_t bytes = recv(client.getFd(), buffer, sizeof(buffer), 0);
     if (bytes > 0)
     {
         client.appendRequest(buffer, bytes);
         /*==============================Request complete & RequestParser======================*/
-        try
-        {
         header_status = req.checkHeader(client.getRequestBuffer());
 
         if (req.getHasContentStatus() && req.getTransferEncodingStatus())
@@ -201,149 +183,13 @@ void Server::handleRead(Client &client)
                 std::cout << "Chuncked not complete" << std::endl;
         }
         else if (!header_status)
-            std::cout << "header not complete" << std::endl;
+            std::cout << "Request not complete" << std::endl;
         else
         {
             std::cout << "Request (no body) complete" << std::endl;
             req.start_parsing(client.getRequestBuffer());
         }
-        }
-        catch (const std::exception &e)
-        {
-            /* Malformed request: answer 400 instead of killing the server */
-            std::cout << "Bad request: " << e.what() << std::endl;
-            Response bad;
-            bad.setError(400);
-            std::string badStr = bad.toString();
-            client.appendResponse(badStr.c_str(), badStr.size());
-            client.setResponseReady(true);
-            header_status = false;
-        }
-        /*==============================================================================*/
-        if (header_status)
-        {
-            client.setConfig(req.getConfig());
-
-            /* Select the appropriate handler based on the request method and location */
-            std::string method = req.method;
-            std::string path = req.path;
-
-            /* Get the server's locations */
-            const std::vector<Locations> &locations = req.getConfig().getLocations();
-
-            /* Find the best matching location */
-            size_t selected = 0;
-            size_t selectedLength = 0;
-            bool found = false;
-
-            for (size_t i = 0; i < locations.size(); ++i)
-            {
-                std::string locationPath = locations[i].getPath();
-                bool prefix = path.find(locationPath) == 0;
-                bool boundary = locationPath == "/"
-                    || path.size() == locationPath.size()
-                    || (path.size() > locationPath.size()
-                        && path[locationPath.size()] == '/');
-
-                if (prefix && boundary && locationPath.size() > selectedLength)
-                {
-                    selected = i;
-                    selectedLength = locationPath.size();
-                    found = true;
-                }
-            }
-
-            /* Create the appropriate handler and generate response */
-            Response response;
-            Handler::e_status status = Handler::ERROR;
-
-            if (found)
-            {
-                const Locations &loc = locations[selected];
-                std::vector<std::string> allowedMethods = loc.getAllowedMethods();
-
-                /* Check if method is allowed for this location */
-                bool methodAllowed = false;
-                for (size_t j = 0; j < allowedMethods.size(); ++j)
-                {
-                    if (method == allowedMethods[j])
-                    {
-                        methodAllowed = true;
-                        break;
-                    }
-                }
-
-                const std::string cgiExt = loc.getCgiExtension();
-                bool isCgi = !cgiExt.empty() && path.size() >= cgiExt.size()
-                    && path.compare(path.size() - cgiExt.size(), cgiExt.size(), cgiExt) == 0;
-
-                if (!loc.getReturn().empty())
-                {
-                    /* Redirect configured for this location (return directive) */
-                    RedirectHandler redirectHandler;
-                    status = redirectHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else if (!methodAllowed)
-                {
-                    /* Method not allowed - StaticHandler builds the 405 */
-                    StaticHandler staticHandler;
-                    status = staticHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else if (isCgi)
-                {
-                    /* Script with configured cgi_extension - use CGIHandler */
-                    CGIHandler cgiHandler;
-                    status = cgiHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else if (method == "GET" || method == "HEAD")
-                {
-                    /* GET/HEAD - use StaticHandler */
-                    StaticHandler staticHandler;
-                    status = staticHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else if (method == "POST")
-                {
-                    /* POST - check for upload or static file */
-                    UploadHandler uploadHandler;
-                    status = uploadHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else if (method == "DELETE")
-                {
-                    /* DELETE - use DeleteHandler */
-                    DeleteHandler deleteHandler;
-                    status = deleteHandler.handle(req, response, req.getConfig(), loc);
-                }
-                else
-                {
-                    /* Default - StaticHandler will handle 405 */
-                    StaticHandler staticHandler;
-                    status = staticHandler.handle(req, response, req.getConfig(), loc);
-                }
-
-                /* Convert handler response to client response buffer */
-                if (status == Handler::DONE)
-                {
-                    std::string resStr = response.toString();
-                    client.appendResponse(resStr.c_str(), resStr.size());
-                    client.setResponseReady(true);
-                }
-            }
-            else
-            {
-                /* No matching location - use default root */
-                StaticHandler staticHandler;
-                status = staticHandler.handle(req, response, req.getConfig(), Locations());
-
-                /* Convert handler response to client response buffer */
-                if (status == Handler::DONE)
-                {
-                    std::string resStr = response.toString();
-                    client.appendResponse(resStr.c_str(), resStr.size());
-                    client.setResponseReady(true);
-                }
-            }
-        }
-        std::cout << "recv complete" << std::endl;
+        std::cout << bytes << "bytes received\n";
     }
     else if (bytes == 0)
         _removeClients.push_back(client.getFd());
@@ -436,8 +282,8 @@ Listener* Server::FindListener(int port)
     return (NULL);
 }
 
-void Server::shut_down()
-{
+void Server::shut_down() 
+{ 
     for (std::vector<Client>::iterator it = _clients.begin(); it != _clients.end(); ++it)
     {
         if (it->getFd() != -1)
@@ -447,7 +293,7 @@ void Server::shut_down()
         }
     }
     this->_clients.clear();
-
+    
     for (std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {
         if (it->fd != -1)

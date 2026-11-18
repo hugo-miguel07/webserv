@@ -2,93 +2,21 @@
 #include "Locations.hpp"
 #include "Config.hpp"
 
-static std::string lowerHeaderName(const std::string& name)
-{
-    std::string result = name;
-
-    for (size_t i = 0; i < result.size(); ++i)
-        result[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(result[i])));
-    return result;
-}
-
-static bool validHeaderName(const std::string& name)
-{
-    if (name.empty())
-        return false;
-
-    for (size_t i = 0; i < name.size(); ++i)
-    {
-        unsigned char c = static_cast<unsigned char>(name[i]);
-        if (std::isalnum(c) != 0 || name[i] == '!' || name[i] == '#'
-            || name[i] == '$' || name[i] == '%' || name[i] == '&'
-            || name[i] == '\'' || name[i] == '*' || name[i] == '+'
-            || name[i] == '-' || name[i] == '.' || name[i] == '^'
-            || name[i] == '_' || name[i] == '`' || name[i] == '|'
-            || name[i] == '~')
-            continue;
-        return false;
-    }
-    return true;
-}
-
-static std::string getHeaderValue(const std::string& buffer,
-                                  const std::string& headerName)
-{
-    size_t headersEnd = buffer.find("\r\n\r\n");
-    if (headersEnd == std::string::npos)
-        return "";
-
-    size_t lineStart = buffer.find("\r\n");
-    while (lineStart != std::string::npos && lineStart < headersEnd)
-    {
-        lineStart += 2;
-        size_t lineEnd = buffer.find("\r\n", lineStart);
-        if (lineEnd == std::string::npos || lineEnd > headersEnd)
-            lineEnd = headersEnd;
-
-        size_t colon = buffer.find(':', lineStart);
-        if (colon != std::string::npos && colon < lineEnd)
-        {
-            std::string name = buffer.substr(lineStart, colon - lineStart);
-            if (lowerHeaderName(name) == headerName)
-                return trim(buffer.substr(colon + 1, lineEnd - colon - 1));
-        }
-
-        if (lineEnd == headersEnd)
-            break;
-        lineStart = lineEnd;
-    }
-    return "";
-}
-
-Request::Request() : Client(), _TransferMethod(""), 
+Request::Request(): Client(), _TransferMethod(""), 
             _nextRequestBytes(0), 
             _contentLen(0), 
             _finisedHeader(false), 
             _hasContent(false), 
-            _hasTransferEncoding(false),
-            _client(NULL){}
-
-Request::Request(const Client& client) : Client(client), _TransferMethod(""),
-            _nextRequestBytes(0),
-            _contentLen(0),
-            _finisedHeader(false),
-            _hasContent(false),
-            _hasTransferEncoding(false),
-            _client(&client)
-{
-    _parsedServers = client.getListener().configs;
-}
+            _hasTransferEncoding(false){}
 
 
 Request::Request(std::vector<ServerConfig>   parsedServers) : Client(), _TransferMethod(""),
+            _parsedServers(parsedServers),
             _nextRequestBytes(0), 
             _contentLen(0), 
             _finisedHeader(false), 
             _hasContent(false), 
-            _hasTransferEncoding(false),
-            _parsedServers(parsedServers),
-            _client(NULL){}
+            _hasTransferEncoding(false){}
 
 Request::~Request(){}
 
@@ -100,28 +28,16 @@ bool    Request::getTransferEncodingStatus(){
     return _hasTransferEncoding;
 }
 
-size_t  Request::getContentLength() const{
-    return _contentLen;
-}
-
-const std::string& Request::getHeader(const std::string& name) const{
-    static const std::string empty;
-    std::map<std::string, std::string>::const_iterator it = _headers.find(name);
-    if (it != _headers.end())
-        return it->second;
-    it = headers.find(name);
-    if (it != headers.end())
-        return it->second;
-    return empty;
-}
-
 bool Request::checkHeader(const std::string buffer)
 {
+    if (buffer.find("Content-Length") != std::string::npos)
+        _hasContent = true;
+
+    if (buffer.find("Transfer-Encoding") != std::string::npos)
+        _hasTransferEncoding = true;
+
     if (buffer.find("\r\n\r\n") == std::string::npos)
         return false;
-
-    _hasContent = !getHeaderValue(buffer, "content-length").empty();
-    _hasTransferEncoding = !getHeaderValue(buffer, "transfer-encoding").empty();
 
     _finisedHeader = true;
     return true;
@@ -131,7 +47,15 @@ void Request::readingBody(const std::string buffer)
 {
     if (_hasContent)
     {
-        std::string value = getHeaderValue(buffer, "content-length");
+        std::string content = "Content-Length: ";
+
+        size_t start = buffer.find(content);
+
+        start += content.size();
+
+        size_t end = buffer.find("\r\n", start);
+
+        std::string value = buffer.substr(start, end - start);
 
         for (size_t i = 0; i < value.size(); i++){
 
@@ -151,7 +75,15 @@ void Request::readingBody(const std::string buffer)
 
     else if (_hasTransferEncoding)
     {
-        std::string value = getHeaderValue(buffer, "transfer-encoding");
+        std::string method = "Transfer-Encoding: ";
+
+        size_t start = buffer.find(method);
+
+        start += method.size();
+
+        size_t end = buffer.find("\r\n", start);
+
+        std::string value = buffer.substr(start, end - start);
 
         if (value != "chunked" || value.empty())
             throw std::runtime_error("Invalid encoding information");
@@ -260,12 +192,6 @@ void    Request::start_parsing(const std::string requestbuffer)
     readingBody(requestbuffer);
     parseBody(requestbuffer);
 
-    method = _requestLine["Method"];
-    path = _requestLine["Path"];
-    query = _requestLine["Query"];
-    body = _body;
-    headers = _headers;
-
     for (std::map<std::string, std::string>::iterator it = _requestLine.begin(); it != _requestLine.end(); it++){
         std::cout << it->first << ":" << it->second << std::endl;
     }
@@ -300,9 +226,10 @@ void    Request::RequestLineParsing(const std::string request)
     if (method.empty())
         throw std::runtime_error("Method doesnt exist!");
 
-    /* Unknown methods are answered with 405 by the dispatcher, not by throwing here */
+    if (method != "GET" && method != "POST" && method != "DELETE")
+        throw std::runtime_error("Invalid method");
+    
     _requestLine.insert(std::make_pair("Method", method));
-    std::cout << "Method " << method << std::endl;
 
     /*================Request target===============*/
 
@@ -324,8 +251,6 @@ void    Request::RequestLineParsing(const std::string request)
     
     if (request_target.find('?') != std::string::npos)
         hasQuery = true;
-
-    std::cout << "Target " << request_target << std::endl;
 
     /*===========HTTP version 1.1===================*/
 
@@ -366,8 +291,6 @@ void Request::QueryParsing(const std::string request_target)
 
     _requestLine.insert(std::make_pair("Path", path));
     _requestLine.insert(std::make_pair("Query", query));
-    std::cout << "Query " << path << std::endl;
-    std::cout << "Path " << query << std::endl; 
 }
 
 void    Request::HeadersToMap(const std::string request)
@@ -387,15 +310,15 @@ void    Request::HeadersToMap(const std::string request)
         if (colon == std::string::npos)
             throw std::runtime_error("Invalid header");
 
-        std::string key = lowerHeaderName(trim(line.substr(0, colon)));
+        std::string key = line.substr(0, colon);
 
         
-        if (!validHeaderName(key))
+        if (key.empty())
         throw std::runtime_error("Invalid header name");
     
         std::string value = line.substr(colon + 1);
 
-        if (key == "host")
+        if (key == "Host" || key == "host" || key == "HOST")
         {
             found_host = true;
             HostParsing(value);
@@ -429,13 +352,8 @@ void Request::HostParsing(std::string host)
                 host = host.substr(0, colon);
         
             if (host == value){
-                std::cout << "Host " << host << std::endl;
                 _server = servers[server];
                 _serverName = value;
-                if (_client)
-                    setConfig(_client->getListener().configs[server]);
-                else
-                    setConfig(_server);
                 return;
             }
         }
@@ -456,7 +374,6 @@ void Request::parseBody(const std::string& buffer)
     if (_hasContent)
     {
         _body = buffer.substr(body_start, _contentLen);
-        std::cout << "Body " << _body << std::endl;
     }
     else if (_hasTransferEncoding)
     {
@@ -473,33 +390,25 @@ void Request::MethodParsing(std::string method)
 
     std::vector<Locations> locations =
         _server.getLocations();
-    size_t selected = 0;
-    size_t selectedLength = 0;
-    bool found = false;
 
     for (size_t i = 0; i < locations.size(); ++i)
     {
-        std::string locationPath = locations[i].getPath();
-        bool prefix = path.find(locationPath) == 0;
-        bool boundary = locationPath == "/"
-            || path.size() == locationPath.size()
-            || (path.size() > locationPath.size()
-                && path[locationPath.size()] == '/');
-
-        if (prefix && boundary && locationPath.size() > selectedLength)
+        if (path.find(locations[i].getPath()) == 0)
         {
-            selected = i;
-            selectedLength = locationPath.size();
-            found = true;
+            std::vector<std::string> allowed_methods =
+                locations[i].getAllowedMethods();
+
+            for (size_t j = 0; j < allowed_methods.size(); ++j)
+            {
+                if (method == allowed_methods[j])
+                    return;
+            }
+
+            throw std::runtime_error("Method not allowed");
         }
     }
 
-    if (!found)
-        throw std::runtime_error("Location not found");
-
-    /* Allowed-method check is done in Server::handleRead dispatch (405 response) */
-    (void)selected;
-    (void)method;
+    throw std::runtime_error("Location not found");
 }
 
 void Request::parseChunkedBody(const std::string& buffer, size_t pos)
@@ -537,5 +446,4 @@ void Request::parseChunkedBody(const std::string& buffer, size_t pos)
 
         pos += 2;
     }
-    std::cout << "Chuncked Body " << _body << std::endl;
 }
