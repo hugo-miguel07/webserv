@@ -3,3 +3,4 @@ configoldlogic
 a.out
 test_config.sh
 *.o
+*.d

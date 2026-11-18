@@ -4,6 +4,7 @@
 #include "Client.hpp"
 #include "Config.hpp"
 #include "Listener.hpp"
+#include "Locations.hpp"
 
 class Server
 {
@@ -27,6 +28,7 @@ public:
 private:
     Listener* FindListener(int port);
     bool isServerFd(int fd);
+    Locations findLocation(const ServerConfig &config, const std::string &path) const;
     void handleRead(Client &client);
     void handleWrite(Client &client);
     void removeClients();

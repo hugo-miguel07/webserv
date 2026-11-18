@@ -20,11 +20,13 @@ SRC = $(addprefix $(SRCDIR), $(SRC_FILES))
 # ================================ OBJECTS =================================== #
 
 OBJS = $(addprefix $(OBJDIR), $(SRC:$(SRCDIR)%.cpp=%.o))
+DEPS = $(OBJS:.o=.d)
 
 # =============================== COMPILER ================================== #
 
 CC				= c++
 CFLAGS			= -Wall -Wextra -Werror -std=c++98 -g
+DEPFLAGS		= -MMD -MP
 INCLUDES		= -I$(INCDIR)
 RM				= rm -f
 MAKE			= make
@@ -47,6 +49,8 @@ WHITE		= \033[0;97m
 
 all: $(NAME)
 
+-include $(DEPS)
+
 # --------------------------------- Targets ---------------------------------- #
 $(NAME): $(OBJS)
 	@echo "$(YELLOW)Linking $(NAME)...$(DEF_COLOR)"
@@ -57,7 +61,7 @@ $(NAME): $(OBJS)
 $(OBJDIR)%.o: $(SRCDIR)%.cpp
 	@mkdir -p $(dir $@)
 	@echo "$(CYAN)Compiling $<...$(DEF_COLOR)"
-	@$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	@$(CC) $(CFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
 
 # ------------------------------ Clean Rules -------------------------------- #
 clean:

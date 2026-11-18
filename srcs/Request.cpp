@@ -1,43 +1,130 @@
 #include "Request.hpp"
-#include "Locations.hpp"
-#include "Config.hpp"
+#include <cctype>
 
-Request::Request(): Client(), _TransferMethod(""), 
-            _nextRequestBytes(0), 
-            _contentLen(0), 
-            _finisedHeader(false), 
-            _hasContent(false), 
-            _hasTransferEncoding(false){}
+Request::Request()
+    : Client(),
+      _TransferMethod(""),
+      _nextRequestBytes(0),
+      _contentLen(0),
+      _finisedHeader(false),
+      _hasContent(false),
+      _hasTransferEncoding(false)
+{
+}
 
+Request::Request(std::vector<ServerConfig> parsedServers)
+    : Client(),
+      _TransferMethod(""),
+      _nextRequestBytes(0),
+      _contentLen(0),
+      _finisedHeader(false),
+      _hasContent(false),
+      _hasTransferEncoding(false),
+      _parsedServers(parsedServers)
+{
+}
 
-Request::Request(std::vector<ServerConfig>   parsedServers) : Client(), _TransferMethod(""),
-            _parsedServers(parsedServers),
-            _nextRequestBytes(0), 
-            _contentLen(0), 
-            _finisedHeader(false), 
-            _hasContent(false), 
-            _hasTransferEncoding(false){}
+Request::~Request()
+{
+}
 
-Request::~Request(){}
-
-bool    Request::getHasContentStatus(){
+bool Request::getHasContentStatus()
+{
     return _hasContent;
 }
 
-bool    Request::getTransferEncodingStatus(){
+bool Request::getTransferEncodingStatus()
+{
     return _hasTransferEncoding;
+}
+
+std::string Request::getHeader(const std::string &name) const
+{
+    std::string requested_name = name;
+    for (size_t i = 0; i < requested_name.size(); ++i)
+    {
+        const unsigned char character = static_cast<unsigned char>(requested_name[i]);
+        requested_name[i] = static_cast<char>(std::tolower(character));
+    }
+
+    for (std::map<std::string, std::string>::const_iterator it = headers.begin();
+         it != headers.end(); ++it)
+    {
+        std::string stored_name = it->first;
+        for (size_t i = 0; i < stored_name.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(stored_name[i]);
+            stored_name[i] = static_cast<char>(std::tolower(character));
+        }
+
+        if (stored_name == requested_name)
+        {
+            return it->second;
+        }
+    }
+
+    return "";
+}
+
+size_t Request::getContentLength() const
+{
+    const std::string length_header = getHeader("content-length");
+    if (length_header.empty())
+    {
+        return _contentLen;
+    }
+
+    const bool contains_non_digit =
+        length_header.find_first_not_of("0123456789") != std::string::npos;
+    if (contains_non_digit)
+    {
+        throw std::runtime_error("Invalid content length");
+    }
+
+    size_t content_length = 0;
+    std::istringstream length_stream(length_header);
+    length_stream >> content_length;
+
+    if (length_stream.fail())
+    {
+        throw std::runtime_error("Invalid content length");
+    }
+
+    return content_length;
+}
+
+const ServerConfig &Request::getServerConfig() const
+{
+    return _server;
 }
 
 bool Request::checkHeader(const std::string buffer)
 {
-    if (buffer.find("Content-Length") != std::string::npos)
-        _hasContent = true;
+    _finisedHeader = false;
+    _hasContent = false;
+    _hasTransferEncoding = false;
+    headers.clear();
 
-    if (buffer.find("Transfer-Encoding") != std::string::npos)
-        _hasTransferEncoding = true;
-
-    if (buffer.find("\r\n\r\n") == std::string::npos)
+    const size_t header_end = buffer.find("\r\n\r\n");
+    if (header_end == std::string::npos)
+    {
         return false;
+    }
+
+    std::string header_text = buffer.substr(0, header_end);
+    for (size_t i = 0; i < header_text.size(); ++i)
+    {
+        const unsigned char character = static_cast<unsigned char>(header_text[i]);
+        header_text[i] = static_cast<char>(std::tolower(character));
+    }
+
+    _hasContent = header_text.find("\r\ncontent-length:") != std::string::npos;
+    _hasTransferEncoding = header_text.find("\r\ntransfer-encoding:") != std::string::npos;
+
+    if (_hasContent && _hasTransferEncoding)
+    {
+        throw std::runtime_error("Ambiguous request framing");
+    }
 
     _finisedHeader = true;
     return true;
@@ -45,315 +132,431 @@ bool Request::checkHeader(const std::string buffer)
 
 void Request::readingBody(const std::string buffer)
 {
+    if (headers.empty())
+    {
+        HeadersToMap(buffer);
+    }
+
+    _contentLen = 0;
+    _TransferMethod.clear();
+
     if (_hasContent)
     {
-        std::string content = "Content-Length: ";
-
-        size_t start = buffer.find(content);
-
-        start += content.size();
-
-        size_t end = buffer.find("\r\n", start);
-
-        std::string value = buffer.substr(start, end - start);
-
-        for (size_t i = 0; i < value.size(); i++){
-
-            if (!std::isdigit(static_cast<unsigned char>(value[i])))
-                throw std::runtime_error("Invalid content len");
+        const std::string length_header = getHeader("content-length");
+        if (length_header.empty())
+        {
+            throw std::runtime_error("Invalid content length");
         }
 
-        if (value.empty())
-            throw std::runtime_error("Invalid content len");
-    
-        std::istringstream val_stream(value);
-        val_stream >> _contentLen;
+        for (size_t i = 0; i < length_header.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(length_header[i]);
+            if (!std::isdigit(character))
+            {
+                throw std::runtime_error("Invalid content length");
+            }
+        }
 
-        if (val_stream.fail())
-            throw std::runtime_error("Invalid content len");
+        std::istringstream length_stream(length_header);
+        length_stream >> _contentLen;
+        if (length_stream.fail())
+        {
+            throw std::runtime_error("Invalid content length");
+        }
     }
-
     else if (_hasTransferEncoding)
     {
-        std::string method = "Transfer-Encoding: ";
+        std::string transfer_method = getHeader("transfer-encoding");
+        for (size_t i = 0; i < transfer_method.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(transfer_method[i]);
+            transfer_method[i] = static_cast<char>(std::tolower(character));
+        }
 
-        size_t start = buffer.find(method);
+        if (transfer_method != "chunked")
+        {
+            throw std::runtime_error("Invalid transfer encoding");
+        }
 
-        start += method.size();
-
-        size_t end = buffer.find("\r\n", start);
-
-        std::string value = buffer.substr(start, end - start);
-
-        if (value != "chunked" || value.empty())
-            throw std::runtime_error("Invalid encoding information");
-
-        std::istringstream transfer_stream(value);
-        transfer_stream >> _TransferMethod;
-
-        if (transfer_stream.fail())
-            throw std::runtime_error("Invalid content len");
+        _TransferMethod = transfer_method;
     }
-
 }
 
 bool Request::checkingBody_framing(const std::string buffer)
 {
-    /*==========Extracting body==========*/
-
-    std::string header_end = "\r\n\r\n";
-
-    size_t body_start = buffer.find("\r\n\r\n");
-    
-    body_start += header_end.size();
-    /*=================================*/
-
-    size_t body_bytes = buffer.size() - body_start;
-
-    if (body_bytes < _contentLen)
-        return false;
-    if (body_bytes == _contentLen)
-        return true;
-    else
+    const std::string header_separator = "\r\n\r\n";
+    const size_t header_end = buffer.find(header_separator);
+    if (header_end == std::string::npos)
     {
-        std::cout << "too many bytes" << std::endl;
-        _nextRequestBytes = body_bytes - _contentLen;
-        return true;
+        return false;
     }
+
+    const size_t body_start = header_end + header_separator.size();
+    const size_t received_body_bytes = buffer.size() - body_start;
+    if (received_body_bytes < _contentLen)
+    {
+        return false;
+    }
+
+    _nextRequestBytes = received_body_bytes - _contentLen;
+    return true;
 }
 
 bool Request::checkingBody_chuncked(const std::string buffer)
 {
-    std::string header_end = "\r\n\r\n";
-
-    size_t body_start = buffer.find(header_end);
-
-    if (body_start == std::string::npos)
+    const std::string header_separator = "\r\n\r\n";
+    const std::string line_ending = "\r\n";
+    const std::string hexadecimal_digits = "0123456789abcdefABCDEF";
+    const size_t header_end = buffer.find(header_separator);
+    if (header_end == std::string::npos)
+    {
         return false;
+    }
 
-    body_start += header_end.size();
-
-    std::cout << "Transfer method: "
-              << _TransferMethod
-              << std::endl;
+    size_t chunk_position = header_end + header_separator.size();
 
     while (true)
     {
-        size_t end = buffer.find("\r\n", body_start);
-
-        if (end == std::string::npos)
+        const size_t size_line_end = buffer.find(line_ending, chunk_position);
+        if (size_line_end == std::string::npos)
+        {
             return false;
+        }
 
-        std::string size_str =
-            buffer.substr(body_start, end - body_start);
+        std::string size_text = buffer.substr(chunk_position, size_line_end - chunk_position);
+        const size_t extension_start = size_text.find(';');
+        if (extension_start != std::string::npos)
+        {
+            size_text = size_text.substr(0, extension_start);
+        }
 
-        if (size_str.empty())
+        if (size_text.empty())
+        {
             throw std::runtime_error("Invalid chunk size");
+        }
 
-        unsigned long chunk_size;
-
-        std::istringstream stream(size_str);
-        stream >> std::hex >> chunk_size;
-
-        if (stream.fail())
+        const bool contains_non_hex_digit =
+            size_text.find_first_not_of(hexadecimal_digits) != std::string::npos;
+        if (contains_non_hex_digit)
+        {
             throw std::runtime_error("Invalid chunk size");
+        }
 
-        body_start = end + 2;
+        size_t chunk_size = 0;
+        std::istringstream size_stream(size_text);
+        size_stream >> std::hex >> chunk_size;
+        if (size_stream.fail())
+        {
+            throw std::runtime_error("Invalid chunk size");
+        }
 
+        const size_t data_start = size_line_end + line_ending.size();
         if (chunk_size == 0)
         {
-            if (buffer.size() < body_start + 2)
-                return false;
+            chunk_position = data_start;
+            break;
+        }
 
-            if (buffer.substr(body_start, 2) != "\r\n")
-                throw std::runtime_error("Invalid chunk ending");
+        const size_t available_bytes = buffer.size() - data_start;
+        if (chunk_size > available_bytes)
+        {
+            return false;
+        }
 
+        const size_t data_end = data_start + chunk_size;
+        const size_t bytes_after_data = buffer.size() - data_end;
+        if (bytes_after_data < line_ending.size())
+        {
+            return false;
+        }
+
+        if (buffer.compare(data_end, line_ending.size(), line_ending) != 0)
+        {
+            throw std::runtime_error("Invalid chunk ending");
+        }
+
+        chunk_position = data_end + line_ending.size();
+    }
+
+    const std::string valid_name_characters =
+        "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyz";
+    size_t trailer_position = chunk_position;
+
+    while (true)
+    {
+        const size_t trailer_end = buffer.find(line_ending, trailer_position);
+        if (trailer_end == std::string::npos)
+        {
+            return false;
+        }
+        if (trailer_end == trailer_position)
+        {
             return true;
         }
 
-        if (buffer.size() < body_start + chunk_size + 2)
-            return false;
+        const std::string trailer_line =
+            buffer.substr(trailer_position, trailer_end - trailer_position);
+        const size_t colon = trailer_line.find(':');
+        if (colon == std::string::npos || colon == 0)
+        {
+            throw std::runtime_error("Invalid trailer");
+        }
 
-        body_start += chunk_size;
+        std::string trailer_name = trailer_line.substr(0, colon);
+        for (size_t i = 0; i < trailer_name.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(trailer_name[i]);
+            trailer_name[i] = static_cast<char>(std::tolower(character));
+        }
 
-        if (buffer.substr(body_start, 2) != "\r\n")
-            throw std::runtime_error("Invalid chunk");
+        const bool invalid_trailer_name =
+            trailer_name.find_first_not_of(valid_name_characters) != std::string::npos;
+        if (invalid_trailer_name)
+        {
+            throw std::runtime_error("Invalid trailer name");
+        }
 
-        body_start += 2;
+        const bool changes_request_framing = trailer_name == "content-length"
+            || trailer_name == "transfer-encoding" || trailer_name == "host";
+        if (changes_request_framing)
+        {
+            throw std::runtime_error("Invalid framing trailer");
+        }
+
+        const std::string trailer_value = trim(trailer_line.substr(colon + 1));
+        for (size_t i = 0; i < trailer_value.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(trailer_value[i]);
+            const bool control_character = character < 32 || character == 127;
+            if (control_character && character != '\t')
+            {
+                throw std::runtime_error("Invalid trailer value");
+            }
+        }
+
+        trailer_position = trailer_end + line_ending.size();
     }
 }
 
-void    Request::start_parsing(const std::string requestbuffer)
+void Request::start_parsing(const std::string requestbuffer)
 {
-    //std::cout << "About to parse" << std::endl; 
+    _requestLine.clear();
+
     RequestLineParsing(requestbuffer);
     HeadersToMap(requestbuffer);
-    MethodParsing(_requestLine["Method"]);
+
+    method = _requestLine["Method"];
+    path = _requestLine["Path"];
+    query = _requestLine["Query"];
+    version = _requestLine["Version"];
+
+    MethodParsing(method);
     readingBody(requestbuffer);
     parseBody(requestbuffer);
-
-    for (std::map<std::string, std::string>::iterator it = _requestLine.begin(); it != _requestLine.end(); it++){
-        std::cout << it->first << ":" << it->second << std::endl;
-    }
-
-    std::cout << std::endl;
-    for (std::map<std::string, std::string>::iterator it = _headers.begin(); it != _headers.end(); it++){
-        std::cout << it->first << ":" << it->second << std::endl;
-    }
-
-    std::cout << "Parsing done" << std::endl;
 }
 
-void    Request::RequestLineParsing(const std::string request)
+void Request::RequestLineParsing(const std::string request)
 {
-    bool hasQuery = false;
-
-    size_t request_line_end = request.find("\r\n");
+    const size_t request_line_end = request.find("\r\n");
     if (request_line_end == std::string::npos)
-        throw std::runtime_error("Invalid request line(invalid end)!");
+    {
+        throw std::runtime_error("Invalid request line ending");
+    }
 
-    std::string request_line = request.substr(0, request_line_end);
+    const std::string request_line = request.substr(0, request_line_end);
     if (request_line.empty())
-        throw std::runtime_error("Invalid request line!");
+    {
+        throw std::runtime_error("Empty request line");
+    }
 
-    /*==========Getting method================*/
-
-    size_t method_end = request_line.find(" ");
+    const size_t method_end = request_line.find(' ');
     if (method_end == std::string::npos)
-        throw std::runtime_error("Invalid request line (no method)");
-    
-    std::string method = request_line.substr(0, method_end);
-    if (method.empty())
-        throw std::runtime_error("Method doesnt exist!");
+    {
+        throw std::runtime_error("Missing request method separator");
+    }
 
-    if (method != "GET" && method != "POST" && method != "DELETE")
+    const std::string parsed_method = request_line.substr(0, method_end);
+    const bool supported_method =
+        parsed_method == "GET" || parsed_method == "POST" || parsed_method == "DELETE";
+    if (!supported_method)
+    {
         throw std::runtime_error("Invalid method");
-    
-    _requestLine.insert(std::make_pair("Method", method));
+    }
+    _requestLine.insert(std::make_pair("Method", parsed_method));
 
-    /*================Request target===============*/
-
-    size_t target_start = method_end + 1;
-    size_t target_end = request_line.find(" ", target_start);
-
+    const size_t target_start = method_end + 1;
+    const size_t target_end = request_line.find(' ', target_start);
     if (target_end == std::string::npos)
-        throw std::runtime_error("Invalid request target(doesnt exixt)");
+    {
+        throw std::runtime_error("Missing request target separator");
+    }
 
-    std::string request_target = request_line.substr(
-        target_start, 
-        target_end - target_start);
-    
+    const std::string request_target = request_line.substr(target_start, target_end - target_start);
     if (request_target.empty())
-        throw std::runtime_error("Inavalid request target");
-    
+    {
+        throw std::runtime_error("Empty request target");
+    }
     if (request_target[0] != '/')
+    {
         throw std::runtime_error("Invalid request target");
-    
-    if (request_target.find('?') != std::string::npos)
-        hasQuery = true;
+    }
 
-    /*===========HTTP version 1.1===================*/
+    for (size_t i = 0; i < request_target.size(); ++i)
+    {
+        const unsigned char character = static_cast<unsigned char>(request_target[i]);
+        if (character <= 32 || character == 127)
+        {
+            throw std::runtime_error("Invalid request target");
+        }
+    }
 
-    size_t version_start = target_end + 1;
-
-    std::string version = request_line.substr(version_start);
-
-    if (version != "HTTP/1.1")
+    const std::string parsed_version = request_line.substr(target_end + 1);
+    if (parsed_version != "HTTP/1.1")
+    {
         throw std::runtime_error("Invalid HTTP version");
+    }
+    _requestLine.insert(std::make_pair("Version", parsed_version));
 
-    _requestLine.insert(std::make_pair("Version", version));
-
-    request_target = trim(request_target);
-
-    if (hasQuery == true)
+    if (request_target.find('?') != std::string::npos)
+    {
         QueryParsing(request_target);
+    }
     else
+    {
         _requestLine.insert(std::make_pair("Path", request_target));
-
-
+    }
 }
 
 void Request::QueryParsing(const std::string request_target)
 {
-    size_t query_pos = request_target.find('?');
-
-    if (query_pos == std::string::npos)
+    const size_t query_position = request_target.find('?');
+    if (query_position == std::string::npos)
+    {
         throw std::runtime_error("Query not found");
-
-    std::string path = request_target.substr(0, query_pos);
-    std::string query = request_target.substr(query_pos + 1);
-
-    if (path.empty())
-        throw std::runtime_error("Invalid path");
-
-    if (query.empty())
-        throw std::runtime_error("Invalid query");
-
-    _requestLine.insert(std::make_pair("Path", path));
-    _requestLine.insert(std::make_pair("Query", query));
-}
-
-void    Request::HeadersToMap(const std::string request)
-{
-    std::istringstream stream(request);
-    std::string line;
-    bool found_host = false;
-
-    std::getline(stream, line);
-
-    while (std::getline(stream, line)){
-        if ( line == "\r")
-            break;
-        
-        size_t colon = line.find(':');
-
-        if (colon == std::string::npos)
-            throw std::runtime_error("Invalid header");
-
-        std::string key = line.substr(0, colon);
-
-        
-        if (key.empty())
-        throw std::runtime_error("Invalid header name");
-    
-        std::string value = line.substr(colon + 1);
-
-        if (key == "Host" || key == "host" || key == "HOST")
-        {
-            found_host = true;
-            HostParsing(value);
-        }
-
-        value = trim(value);
-
-        _headers.insert(std::make_pair(key, value));
     }
 
-    if (!found_host)
+    const std::string parsed_path = request_target.substr(0, query_position);
+    const std::string query_string = request_target.substr(query_position + 1);
+    if (parsed_path.empty())
+    {
+        throw std::runtime_error("Invalid path");
+    }
+
+    _requestLine.insert(std::make_pair("Path", parsed_path));
+    _requestLine.insert(std::make_pair("Query", query_string));
+}
+
+void Request::HeadersToMap(const std::string request)
+{
+    const size_t header_end = request.find("\r\n\r\n");
+    if (header_end == std::string::npos)
+    {
+        throw std::runtime_error("Incomplete headers");
+    }
+
+    headers.clear();
+    _hasContent = false;
+    _hasTransferEncoding = false;
+
+    const std::string valid_name_characters =
+        "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyz";
+    std::istringstream header_stream(request.substr(0, header_end));
+    std::string header_line;
+    std::getline(header_stream, header_line);
+
+    while (std::getline(header_stream, header_line))
+    {
+        const size_t colon = header_line.find(':');
+        if (colon == std::string::npos)
+        {
+            throw std::runtime_error("Invalid header");
+        }
+
+        std::string header_name = header_line.substr(0, colon);
+        for (size_t i = 0; i < header_name.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(header_name[i]);
+            header_name[i] = static_cast<char>(std::tolower(character));
+        }
+
+        const bool invalid_header_name = header_name.empty()
+            || header_name.find_first_not_of(valid_name_characters) != std::string::npos;
+        if (invalid_header_name)
+        {
+            throw std::runtime_error("Invalid header name");
+        }
+
+        const bool is_host_header = header_name == "host";
+        const bool defines_body_framing =
+            header_name == "content-length" || header_name == "transfer-encoding";
+        const bool already_present = headers.count(header_name) != 0;
+        if (already_present && (is_host_header || defines_body_framing))
+        {
+            throw std::runtime_error("Duplicate Host or framing header");
+        }
+
+        const std::string header_value = trim(header_line.substr(colon + 1));
+        for (size_t i = 0; i < header_value.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(header_value[i]);
+            const bool control_character = character < 32 || character == 127;
+            if (control_character && character != '\t')
+            {
+                throw std::runtime_error("Invalid header value");
+            }
+        }
+
+        headers.insert(std::make_pair(header_name, header_value));
+    }
+
+    const std::string host_header = getHeader("host");
+    if (host_header.empty())
+    {
         throw std::runtime_error("No host");
+    }
+
+    _hasContent = headers.count("content-length") != 0;
+    _hasTransferEncoding = headers.count("transfer-encoding") != 0;
+    if (_hasContent && _hasTransferEncoding)
+    {
+        throw std::runtime_error("Ambiguous request framing");
+    }
+
+    HostParsing(host_header);
 }
 
 void Request::HostParsing(std::string host)
 {
     host = trim(host);
-
-    std::vector<ServerConfig> servers = _parsedServers;
-
-    for (size_t server = 0; server < servers.size(); ++server)
+    for (size_t i = 0; i < host.size(); ++i)
     {
-        std::vector<std::string> names = servers[server].getServerName();
+        const unsigned char character = static_cast<unsigned char>(host[i]);
+        host[i] = static_cast<char>(std::tolower(character));
+    }
 
-        for (size_t i = 0; i < names.size(); ++i)
+    const size_t port_separator = host.find(':');
+    if (port_separator != std::string::npos)
+    {
+        host = host.substr(0, port_separator);
+    }
+
+    const std::vector<ServerConfig> &servers = _parsedServers;
+    for (size_t server_index = 0; server_index < servers.size(); ++server_index)
+    {
+        const std::vector<std::string> server_names = servers[server_index].getServerName();
+        for (size_t name_index = 0; name_index < server_names.size(); ++name_index)
         {
-            std::string value = names[i];
+            std::string configured_name = server_names[name_index];
+            for (size_t i = 0; i < configured_name.size(); ++i)
+            {
+                const unsigned char character = static_cast<unsigned char>(configured_name[i]);
+                configured_name[i] = static_cast<char>(std::tolower(character));
+            }
 
-            size_t colon = host.find(':');
-            if (colon != std::string::npos)
-                host = host.substr(0, colon);
-        
-            if (host == value){
-                _server = servers[server];
-                _serverName = value;
+            if (host == configured_name)
+            {
+                _server = servers[server_index];
+                _serverName = configured_name;
                 return;
             }
         }
@@ -362,88 +565,151 @@ void Request::HostParsing(std::string host)
     throw std::runtime_error("Invalid host");
 }
 
-void Request::parseBody(const std::string& buffer)
+void Request::parseBody(const std::string &buffer)
 {
-    size_t header_end = buffer.find("\r\n\r\n");
-
+    const std::string header_separator = "\r\n\r\n";
+    const size_t header_end = buffer.find(header_separator);
     if (header_end == std::string::npos)
+    {
         throw std::runtime_error("Invalid body");
+    }
 
-    size_t body_start = header_end + 4;
-
+    const size_t body_start = header_end + header_separator.size();
     if (_hasContent)
     {
-        _body = buffer.substr(body_start, _contentLen);
+        if (!checkingBody_framing(buffer))
+        {
+            throw std::runtime_error("Incomplete body");
+        }
+
+        body = buffer.substr(body_start, _contentLen);
     }
     else if (_hasTransferEncoding)
     {
         parseChunkedBody(buffer, body_start);
     }
     else
-        _body.clear();
-    return ;
+    {
+        body.clear();
+    }
 }
 
 void Request::MethodParsing(std::string method)
 {
-    std::string path = _requestLine["Path"];
-
-    std::vector<Locations> locations =
-        _server.getLocations();
+    const std::string request_path = _requestLine["Path"];
+    const std::vector<Locations> locations = _server.getLocations();
+    const size_t no_location = locations.size();
+    size_t best_location = no_location;
 
     for (size_t i = 0; i < locations.size(); ++i)
     {
-        if (path.find(locations[i].getPath()) == 0)
+        const std::string location_path = locations[i].getPath();
+        if (location_path.empty())
         {
-            std::vector<std::string> allowed_methods =
-                locations[i].getAllowedMethods();
+            continue;
+        }
 
-            for (size_t j = 0; j < allowed_methods.size(); ++j)
+        const bool matches_prefix =
+            request_path.compare(0, location_path.size(), location_path) == 0;
+        if (!matches_prefix)
+        {
+            continue;
+        }
+
+        const bool exact_match = request_path.size() == location_path.size();
+        const bool location_ends_with_slash = location_path[location_path.size() - 1] == '/';
+        if (!exact_match && !location_ends_with_slash)
+        {
+            if (request_path[location_path.size()] != '/')
             {
-                if (method == allowed_methods[j])
-                    return;
+                continue;
             }
+        }
 
-            throw std::runtime_error("Method not allowed");
+        if (best_location == no_location)
+        {
+            best_location = i;
+        }
+        else if (location_path.size() > locations[best_location].getPath().size())
+        {
+            best_location = i;
         }
     }
 
-    throw std::runtime_error("Location not found");
+    if (best_location == no_location)
+    {
+        throw 404;
+    }
+
+    const std::vector<std::string> allowed_methods = locations[best_location].getAllowedMethods();
+    if (allowed_methods.empty())
+    {
+        return;
+    }
+
+    for (size_t i = 0; i < allowed_methods.size(); ++i)
+    {
+        if (method == allowed_methods[i])
+        {
+            return;
+        }
+    }
+
+    throw 405;
 }
 
-void Request::parseChunkedBody(const std::string& buffer, size_t pos)
+void Request::parseChunkedBody(const std::string &buffer, size_t pos)
 {
-    _body.clear();
+    if (!checkingBody_chuncked(buffer))
+    {
+        throw std::runtime_error("Incomplete chunked body");
+    }
+
+    body.clear();
+    const std::string line_ending = "\r\n";
 
     while (true)
     {
-        size_t end = buffer.find("\r\n", pos);
-
-        if (end == std::string::npos)
+        const size_t size_line_end = buffer.find(line_ending, pos);
+        if (size_line_end == std::string::npos)
+        {
             throw std::runtime_error("Invalid chunk");
+        }
 
-        std::string size_str = buffer.substr(pos, end - pos);
-
-        unsigned long chunk_size;
-        std::istringstream stream(size_str);
-
-        stream >> std::hex >> chunk_size;
-
-        if (stream.fail())
+        const std::string size_line = buffer.substr(pos, size_line_end - pos);
+        size_t chunk_size = 0;
+        std::istringstream size_stream(size_line);
+        size_stream >> std::hex >> chunk_size;
+        if (size_stream.fail())
+        {
             throw std::runtime_error("Invalid chunk size");
+        }
 
-        pos = end + 2;
-
+        const size_t data_start = size_line_end + line_ending.size();
+        pos = data_start;
         if (chunk_size == 0)
+        {
             break;
+        }
 
-        _body.append(buffer, pos, chunk_size);
+        const size_t available_bytes = buffer.size() - data_start;
+        if (chunk_size > available_bytes)
+        {
+            throw std::runtime_error("Incomplete chunk");
+        }
 
-        pos += chunk_size;
+        const size_t data_end = data_start + chunk_size;
+        const size_t bytes_after_data = buffer.size() - data_end;
+        if (bytes_after_data < line_ending.size())
+        {
+            throw std::runtime_error("Incomplete chunk");
+        }
+        if (buffer.compare(data_end, line_ending.size(), line_ending) != 0)
+        {
+            throw std::runtime_error("Invalid chunk ending");
+        }
 
-        if (buffer.substr(pos, 2) != "\r\n")
-            throw std::runtime_error("Invalid chunk");
-
-        pos += 2;
+        body.append(buffer, data_start, chunk_size);
+        pos = data_end + line_ending.size();
     }
 }

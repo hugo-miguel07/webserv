@@ -1,6 +1,12 @@
 #include "Server.hpp"
 #include "Client.hpp"
 #include "Request.hpp"
+#include "StaticHandler.hpp"
+#include "UploadHandler.hpp"
+#include "DeleteHandler.hpp"
+#include "RedirectHandler.hpp"
+#include "CGIHandler.hpp"
+#include <cerrno>
 
 Server::Server(const Config &config) : _config(config) {}
 
@@ -64,6 +70,26 @@ bool Server::isServerFd(int fd)
     return false;
 }
 
+Locations Server::findLocation(const ServerConfig &config, const std::string &path) const
+{
+    std::vector<Locations> locations = config.getLocations();
+    size_t best = locations.size();
+    for (size_t i = 0; i < locations.size(); ++i)
+    {
+        const std::string prefix = locations[i].getPath();
+        if (prefix.empty() || path.compare(0, prefix.size(), prefix) != 0)
+            continue;
+        if (path.size() != prefix.size() && prefix[prefix.size() - 1] != '/'
+            && path[prefix.size()] != '/')
+            continue;
+        if (best == locations.size() || prefix.size() > locations[best].getPath().size())
+            best = i;
+    }
+    if (best == locations.size())
+        throw 404;
+    return locations[best];
+}
+
 void Server::enablePollOut()
 {
     for (size_t i = 0; i < _pollfds.size(); i++)
@@ -72,9 +98,9 @@ void Server::enablePollOut()
             continue;
         Client *client = getClientById(_pollfds[i].fd);
         if (client && client->getResponseReady())
-            _pollfds[i].events |= POLLOUT;
+            _pollfds[i].events = POLLOUT;
         else
-            _pollfds[i].events &= ~POLLOUT;
+            _pollfds[i].events = POLLIN;
     }
 }
 
@@ -143,70 +169,184 @@ void Server::removeClients()
 
 void Server::handleRead(Client &client)
 {
-    char buffer[4096];
-    Request req(client.getListener().configs);
-    bool    header_status;
-
-
-    ssize_t bytes = recv(client.getFd(), buffer, sizeof(buffer), 0);
-    if (bytes > 0)
+    if (client.getResponseReady())
     {
-        client.appendRequest(buffer, bytes);
-        /*==============================Request complete & RequestParser======================*/
-        header_status = req.checkHeader(client.getRequestBuffer());
-
-        if (req.getHasContentStatus() && req.getTransferEncodingStatus())
-            throw std::runtime_error("Invalid request format");
-    
-        if (header_status && req.getHasContentStatus())
-        {
-            req.readingBody(client.getRequestBuffer());
-
-            if (req.checkingBody_framing(client.getRequestBuffer()))
-            {
-                std::cout << "Framing complete" << std::endl;
-                req.start_parsing(client.getRequestBuffer());
-            }
-            else
-                std::cout << "Framing not complete" << std::endl;
-        }
-        else if (header_status && req.getTransferEncodingStatus())
-        {
-            req.readingBody(client.getRequestBuffer());
-
-            if (req.checkingBody_chuncked(client.getRequestBuffer()))
-            {
-                std::cout << "Chuncked complete" << std::endl;
-                req.start_parsing(client.getRequestBuffer());
-            }
-            else
-                std::cout << "Chuncked not complete" << std::endl;
-        }
-        else if (!header_status)
-            std::cout << "Request not complete" << std::endl;
-        else
-        {
-            std::cout << "Request (no body) complete" << std::endl;
-            req.start_parsing(client.getRequestBuffer());
-        }
-        std::cout << bytes << "bytes received\n";
+        return;
     }
-    else if (bytes == 0)
+
+    char read_buffer[4096];
+    const ssize_t received_bytes = recv(client.getFd(), read_buffer, sizeof(read_buffer), 0);
+
+    if (received_bytes == 0)
+    {
         _removeClients.push_back(client.getFd());
-    else
-        std::cout << "Error at request reading\n";
+        return;
+    }
+
+    if (received_bytes < 0)
+    {
+        const int read_error = errno;
+        const bool can_retry = read_error == EAGAIN
+            || read_error == EWOULDBLOCK || read_error == EINTR;
+
+        if (!can_retry)
+        {
+            _removeClients.push_back(client.getFd());
+        }
+        return;
+    }
+
+    client.appendRequest(read_buffer, received_bytes);
+
+    Request request(client.getListener().configs);
+    Response response;
+    bool request_parsed = false;
+
+    try
+    {
+        const std::string &request_buffer = client.getRequestBuffer();
+        const bool headers_complete = request.checkHeader(request_buffer);
+        if (!headers_complete)
+        {
+            return;
+        }
+
+        request.HeadersToMap(request_buffer);
+        request.readingBody(request_buffer);
+
+        const ServerConfig &server_config = request.getServerConfig();
+        const size_t max_body_size = server_config.getBodySize();
+        if (request.getContentLength() > max_body_size)
+        {
+            throw 413;
+        }
+
+        if (request.getHasContentStatus())
+        {
+            const bool body_complete = request.checkingBody_framing(request_buffer);
+            if (!body_complete)
+            {
+                return;
+            }
+        }
+
+        if (request.getTransferEncodingStatus())
+        {
+            const bool body_complete = request.checkingBody_chuncked(request_buffer);
+            if (!body_complete)
+            {
+                return;
+            }
+        }
+
+        request.start_parsing(request_buffer);
+        request_parsed = true;
+
+        if (request.body.size() > max_body_size)
+        {
+            throw 413;
+        }
+
+        const Locations location = findLocation(server_config, request.path);
+
+        StaticHandler static_handler;
+        RedirectHandler redirect_handler;
+        CGIHandler cgi_handler;
+        UploadHandler upload_handler;
+        DeleteHandler delete_handler;
+        Handler *selected_handler = &static_handler;
+
+        if (!location.getReturn().empty())
+        {
+            selected_handler = &redirect_handler;
+        }
+        else if (!location.getCgiExtension().empty() || !location.getCgiPath().empty())
+        {
+            selected_handler = &cgi_handler;
+        }
+        else if (request.method == "POST" && !location.getUploadStore().empty())
+        {
+            selected_handler = &upload_handler;
+        }
+        else if (request.method == "DELETE")
+        {
+            selected_handler = &delete_handler;
+        }
+
+        const Handler::e_status handler_status =
+            selected_handler->handle(request, response, server_config, location);
+
+        const bool handler_finished = handler_status == Handler::DONE;
+        const bool response_has_error = response.statusCode >= 400;
+        if (!handler_finished && !response_has_error)
+        {
+            response.clear();
+            response.setError(500);
+        }
+    }
+    catch (int status_code)
+    {
+        response.clear();
+        response.setError(status_code);
+
+        if (status_code == 405)
+        {
+            const Locations location = findLocation(request.getServerConfig(), request.path);
+            const std::vector<std::string> allowed_methods = location.getAllowedMethods();
+            std::string allow_header;
+
+            for (size_t i = 0; i < allowed_methods.size(); ++i)
+            {
+                if (i > 0)
+                {
+                    allow_header += ", ";
+                }
+                allow_header += allowed_methods[i];
+            }
+
+            response.setHeader("Allow", allow_header);
+        }
+    }
+    catch (const std::exception &error)
+    {
+        std::cerr << "Request error: " << error.what() << std::endl;
+        response.clear();
+
+        int status_code = 400;
+        if (request_parsed)
+        {
+            status_code = 500;
+        }
+        response.setError(status_code);
+    }
+
+    response.setHeader("Connection", "close");
+    const std::string serialized_response = response.toString();
+    client.appendResponse(serialized_response.data(), serialized_response.size());
+    client.setResponseOffset(0);
+    client.setResponseReady(true);
 }
 
 void Server::handleWrite(Client &client)
 {
     const std::string &res = client.getResponseBuffer();
     size_t offset = client.getResponseOffset();
-    ssize_t bytes = send(client.getFd(), res.c_str() + offset, res.length() - offset, 0);
-    if (bytes == -1)
-        throw(std::runtime_error("Error on send()"));
+    ssize_t bytes = send(client.getFd(), res.c_str() + offset, res.length() - offset, MSG_NOSIGNAL);
+    if (bytes <= 0)
+    {
+        if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
+            return;
+        client.setResponseReady(false);
+        _removeClients.push_back(client.getFd());
+        return;
+    }
     client.setResponseOffset(offset + bytes);
     if (client.getResponseOffset() == res.size())
+    {
+        client.setResponseReady(false);
         Server::disablePollOut(client.getFd());
+        _removeClients.push_back(client.getFd());
+    }
 }
 
 void Server::disablePollOut(int fd)

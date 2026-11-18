@@ -20,15 +20,20 @@ class Request: public Client {
         bool                                _finisedHeader;
         bool                                _hasContent;
         bool                                _hasTransferEncoding;
-        std::string                         _body;
         ServerConfig                        _server;
         std::string                         _serverName;
         std::map<std::string, std::string>  _requestLine;
-        std::map<std::string, std::string>  _headers;
 
         std::vector<ServerConfig>   _parsedServers;
         
     public:
+
+        std::string method;
+        std::string path;
+        std::string query;
+        std::string version;
+        std::string body;
+        std::map<std::string, std::string> headers;
 
         Request();
         Request(std::vector<ServerConfig> parsed_server);
@@ -36,6 +41,8 @@ class Request: public Client {
         bool    getHasContentStatus();
         bool    getTransferEncodingStatus();
         size_t  getContentLength() const;
+        std::string getHeader(const std::string &name) const;
+        const ServerConfig &getServerConfig() const;
 
         /*Checkers*/
         bool    checkHeader(const std::string requestBuffer);
