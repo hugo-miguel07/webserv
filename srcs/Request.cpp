@@ -416,6 +416,10 @@ void Request::HostParsing(std::string host)
 
     std::vector<ServerConfig> servers = _parsedServers;
 
+    size_t colon = host.find(':');
+    if (colon != std::string::npos)
+        host = host.substr(0, colon);
+
     for (size_t server = 0; server < servers.size(); ++server)
     {
         std::vector<std::string> names = servers[server].getServerName();
@@ -423,11 +427,6 @@ void Request::HostParsing(std::string host)
         for (size_t i = 0; i < names.size(); ++i)
         {
             std::string value = names[i];
-
-            size_t colon = host.find(':');
-            if (colon != std::string::npos)
-                host = host.substr(0, colon);
-        
             if (host == value){
                 std::cout << "Host " << host << std::endl;
                 _server = servers[server];
@@ -439,6 +438,16 @@ void Request::HostParsing(std::string host)
                 return;
             }
         }
+    }
+
+    if (!servers.empty())
+    {
+        std::cout << "Host " << host << " (default)" << std::endl;
+        _server = servers[0];
+        _serverName = servers[0].getServerName().empty()
+            ? "" : servers[0].getServerName()[0];
+        setConfig(_server);
+        return;
     }
 
     throw std::runtime_error("Invalid host");

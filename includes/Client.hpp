@@ -31,6 +31,8 @@ public:
     size_t              getResponseOffset() const;
     void                setConfig(const ServerConfig& config);
     const ServerConfig& getConfig() const;
+    void                clearResponseBuffer();
+    void                clearRequestBuffer();
 
 
     bool                requestComplete();

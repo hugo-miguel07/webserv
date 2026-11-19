@@ -67,5 +67,15 @@ void Client::setConfig(const ServerConfig& config)
     _config = &config;
 }
 
+void Client::clearResponseBuffer()
+{
+    _responseBuffer.clear();
+}
+
+void Client::clearRequestBuffer()
+{
+    _requestBuffer.clear();
+}
+
 
 

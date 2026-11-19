@@ -343,6 +343,11 @@ void Server::handleRead(Client &client)
                 }
             }
         }
+        if (header_status)
+        {
+            client.clearRequestBuffer();
+            client.setResponseOffset(0);
+        }
         std::cout << "recv complete" << std::endl;
     }
     else if (bytes == 0)
@@ -360,7 +365,12 @@ void Server::handleWrite(Client &client)
         throw(std::runtime_error("Error on send()"));
     client.setResponseOffset(offset + bytes);
     if (client.getResponseOffset() == res.size())
+    {
         Server::disablePollOut(client.getFd());
+        client.clearResponseBuffer();
+        client.setResponseOffset(0);
+        client.setResponseReady(false);
+    }
 }
 
 void Server::disablePollOut(int fd)
