@@ -32,6 +32,27 @@ void Client::appendResponse(const char *buffer, int total_bytes)
     this->_responseBuffer.append(buffer, total_bytes);
 }
 
+void Client::clearRequestBuffer()
+{
+    std::string().swap(_requestBuffer);
+}
+
+void Client::setResponseBuffer(std::string &buffer)
+{
+    _responseBuffer.swap(buffer);
+}
+
+void Client::swap(Client &other)
+{
+    std::swap(_fd, other._fd);
+    _requestBuffer.swap(other._requestBuffer);
+    _responseBuffer.swap(other._responseBuffer);
+    std::swap(_responseOffset, other._responseOffset);
+    std::swap(_responseReady, other._responseReady);
+    std::swap(_listener, other._listener);
+    std::swap(_config, other._config);
+}
+
 const std::string& Client::getResponseBuffer() const
 {
     return (_responseBuffer);

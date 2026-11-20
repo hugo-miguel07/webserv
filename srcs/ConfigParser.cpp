@@ -65,6 +65,7 @@ bool   ConfigParser::isLocationDirective(const std::string& token)
     return (token == "index"
     || token == "allow_methods"
     || token == "root"
+    || token == "client_max_body_size"
     || token == "autoindex"
     || token == "upload_store"
     || token == "cgi_extension"
@@ -150,6 +151,9 @@ Locations ConfigParser::handleLocation(const std::vector<Token> &tokens, size_t 
                 case DIRECTIVE_ROOT:
                     handleRootDirective(tokens, i, true);
                     break;
+                case DIRECTIVE_CLIENT_MAX_BODY_SIZE:
+                    handleClientMaxBodySizeDirective(tokens, i, true);
+                    break;
                 case DIRECTIVE_INDEX:
                     handleIndexDirective(tokens, i, true);
                     break;
@@ -219,6 +223,8 @@ DirectiveType   ConfigParser::getLocationDirectiveType(const std::string& token)
 
     if (token == "root")
         type = DIRECTIVE_ROOT;
+    else if (token == "client_max_body_size")
+        type = DIRECTIVE_CLIENT_MAX_BODY_SIZE;
     else if (token == "index")
         type = DIRECTIVE_INDEX;
     else if (token == "allow_methods")
@@ -417,14 +423,17 @@ void ConfigParser::handleIndexDirective(const std::vector<Token>& tokens, size_t
         i++;
     }
 }
-void ConfigParser::handleClientMaxBodySizeDirective(const std::vector<Token>& tokens, size_t &i)
+void ConfigParser::handleClientMaxBodySizeDirective(const std::vector<Token>& tokens, size_t &i, bool is_location)
 {
     size_t tSize = tokens.size();
     if (i + 1 >= tSize || tokens[i + 1].content == ";")
         throw std::runtime_error("Client_max_body_size directive expects an argument (line: " + to_string(tokens[i].line) + ")");
     ++i;
     size_t bodySize = parseBodySizeWeight(tokens[i].content, tokens, i);
-    _serv.setBodySize(bodySize);
+    if (is_location)
+        _loc.setBodySize(bodySize);
+    else
+        _serv.setBodySize(bodySize);
     checkSemiColon(tokens, i);
 }
 

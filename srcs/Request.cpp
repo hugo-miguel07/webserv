@@ -8,7 +8,13 @@ Request::Request()
       _contentLen(0),
       _finisedHeader(false),
       _hasContent(false),
-      _hasTransferEncoding(false)
+      _hasTransferEncoding(false),
+      _headerSearchOffset(0),
+      _bodyStart(0),
+      _chunkState(CHUNK_SIZE),
+      _chunkPosition(0),
+      _chunkSize(0),
+      _chunkTotal(0)
 {
 }
 
@@ -20,6 +26,12 @@ Request::Request(std::vector<ServerConfig> parsedServers)
       _finisedHeader(false),
       _hasContent(false),
       _hasTransferEncoding(false),
+      _headerSearchOffset(0),
+      _bodyStart(0),
+      _chunkState(CHUNK_SIZE),
+      _chunkPosition(0),
+      _chunkSize(0),
+      _chunkTotal(0),
       _parsedServers(parsedServers)
 {
 }
@@ -98,18 +110,21 @@ const ServerConfig &Request::getServerConfig() const
     return _server;
 }
 
-bool Request::checkHeader(const std::string buffer)
+bool Request::checkHeader(const std::string& buffer)
 {
-    _finisedHeader = false;
+    if (_finisedHeader)
+        return true;
     _hasContent = false;
     _hasTransferEncoding = false;
     headers.clear();
 
-    const size_t header_end = buffer.find("\r\n\r\n");
+    const size_t header_end = buffer.find("\r\n\r\n", _headerSearchOffset);
     if (header_end == std::string::npos)
     {
+        _headerSearchOffset = buffer.size() > 3 ? buffer.size() - 3 : 0;
         return false;
     }
+    _bodyStart = header_end + 4;
 
     std::string header_text = buffer.substr(0, header_end);
     for (size_t i = 0; i < header_text.size(); ++i)
@@ -130,7 +145,7 @@ bool Request::checkHeader(const std::string buffer)
     return true;
 }
 
-void Request::readingBody(const std::string buffer)
+void Request::readingBody(const std::string& buffer)
 {
     if (headers.empty())
     {
@@ -182,16 +197,17 @@ void Request::readingBody(const std::string buffer)
     }
 }
 
-bool Request::checkingBody_framing(const std::string buffer)
+bool Request::checkingBody_framing(const std::string& buffer)
 {
     const std::string header_separator = "\r\n\r\n";
-    const size_t header_end = buffer.find(header_separator);
-    if (header_end == std::string::npos)
+    if (_bodyStart == 0)
     {
-        return false;
+        const size_t header_end = buffer.find(header_separator);
+        if (header_end == std::string::npos)
+            return false;
+        _bodyStart = header_end + header_separator.size();
     }
-
-    const size_t body_start = header_end + header_separator.size();
+    const size_t body_start = _bodyStart;
     const size_t received_body_bytes = buffer.size() - body_start;
     if (received_body_bytes < _contentLen)
     {
@@ -202,68 +218,80 @@ bool Request::checkingBody_framing(const std::string buffer)
     return true;
 }
 
-bool Request::checkingBody_chuncked(const std::string buffer)
+bool Request::checkingBody_chuncked(const std::string& buffer, size_t maxBodySize)
 {
     const std::string header_separator = "\r\n\r\n";
     const std::string line_ending = "\r\n";
     const std::string hexadecimal_digits = "0123456789abcdefABCDEF";
-    const size_t header_end = buffer.find(header_separator);
-    if (header_end == std::string::npos)
+    if (_chunkPosition == 0)
     {
-        return false;
+        const size_t header_end = buffer.find(header_separator);
+        if (header_end == std::string::npos)
+            return false;
+        _chunkPosition = header_end + header_separator.size();
     }
+    if (_chunkTotal > maxBodySize)
+        throw 413;
 
-    size_t chunk_position = header_end + header_separator.size();
-
-    while (true)
+    while (_chunkState == CHUNK_SIZE || _chunkState == CHUNK_DATA)
     {
-        const size_t size_line_end = buffer.find(line_ending, chunk_position);
-        if (size_line_end == std::string::npos)
+        if (_chunkState == CHUNK_SIZE)
+        {
+            const size_t size_line_end = buffer.find(line_ending, _chunkPosition);
+            if (size_line_end == std::string::npos)
+            {
+                return false;
+            }
+
+            std::string size_text = buffer.substr(_chunkPosition, size_line_end - _chunkPosition);
+            const size_t extension_start = size_text.find(';');
+            if (extension_start != std::string::npos)
+            {
+                size_text = size_text.substr(0, extension_start);
+            }
+
+            if (size_text.empty())
+            {
+                throw std::runtime_error("Invalid chunk size");
+            }
+
+            const bool contains_non_hex_digit =
+                size_text.find_first_not_of(hexadecimal_digits) != std::string::npos;
+            if (contains_non_hex_digit)
+            {
+                throw std::runtime_error("Invalid chunk size");
+            }
+
+            size_t chunk_size = 0;
+            std::istringstream size_stream(size_text);
+            size_stream >> std::hex >> chunk_size;
+            if (size_stream.fail())
+            {
+                throw std::runtime_error("Invalid chunk size");
+            }
+
+            // Check the announced payload before waiting for the chunk data.
+            if (chunk_size > maxBodySize - _chunkTotal)
+                throw 413;
+            _chunkTotal += chunk_size;
+
+            _chunkPosition = size_line_end + line_ending.size();
+            _chunkSize = chunk_size;
+            if (chunk_size == 0)
+            {
+                _chunkState = CHUNK_TRAILERS;
+                break;
+            }
+            _chunkState = CHUNK_DATA;
+        }
+
+        const size_t available_bytes = buffer.size() - _chunkPosition;
+        if (_chunkSize > available_bytes)
         {
             return false;
         }
 
-        std::string size_text = buffer.substr(chunk_position, size_line_end - chunk_position);
-        const size_t extension_start = size_text.find(';');
-        if (extension_start != std::string::npos)
-        {
-            size_text = size_text.substr(0, extension_start);
-        }
-
-        if (size_text.empty())
-        {
-            throw std::runtime_error("Invalid chunk size");
-        }
-
-        const bool contains_non_hex_digit =
-            size_text.find_first_not_of(hexadecimal_digits) != std::string::npos;
-        if (contains_non_hex_digit)
-        {
-            throw std::runtime_error("Invalid chunk size");
-        }
-
-        size_t chunk_size = 0;
-        std::istringstream size_stream(size_text);
-        size_stream >> std::hex >> chunk_size;
-        if (size_stream.fail())
-        {
-            throw std::runtime_error("Invalid chunk size");
-        }
-
-        const size_t data_start = size_line_end + line_ending.size();
-        if (chunk_size == 0)
-        {
-            chunk_position = data_start;
-            break;
-        }
-
-        const size_t available_bytes = buffer.size() - data_start;
-        if (chunk_size > available_bytes)
-        {
-            return false;
-        }
-
-        const size_t data_end = data_start + chunk_size;
+        const size_t data_end = _chunkPosition + _chunkSize;
         const size_t bytes_after_data = buffer.size() - data_end;
         if (bytes_after_data < line_ending.size())
         {
@@ -275,27 +303,27 @@ bool Request::checkingBody_chuncked(const std::string buffer)
             throw std::runtime_error("Invalid chunk ending");
         }
 
-        chunk_position = data_end + line_ending.size();
+        _chunkPosition = data_end + line_ending.size();
+        _chunkState = CHUNK_SIZE;
     }
 
     const std::string valid_name_characters =
         "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyz";
-    size_t trailer_position = chunk_position;
-
-    while (true)
+    while (_chunkState == CHUNK_TRAILERS)
     {
-        const size_t trailer_end = buffer.find(line_ending, trailer_position);
+        const size_t trailer_end = buffer.find(line_ending, _chunkPosition);
         if (trailer_end == std::string::npos)
         {
             return false;
         }
-        if (trailer_end == trailer_position)
+        if (trailer_end == _chunkPosition)
         {
+            _chunkState = CHUNK_DONE;
             return true;
         }
 
         const std::string trailer_line =
-            buffer.substr(trailer_position, trailer_end - trailer_position);
+            buffer.substr(_chunkPosition, trailer_end - _chunkPosition);
         const size_t colon = trailer_line.find(':');
         if (colon == std::string::npos || colon == 0)
         {
@@ -334,11 +362,12 @@ bool Request::checkingBody_chuncked(const std::string buffer)
             }
         }
 
-        trailer_position = trailer_end + line_ending.size();
+        _chunkPosition = trailer_end + line_ending.size();
     }
+    return _chunkState == CHUNK_DONE;
 }
 
-void Request::start_parsing(const std::string requestbuffer)
+void Request::start_parsing(const std::string& requestbuffer)
 {
     _requestLine.clear();
 
@@ -355,7 +384,7 @@ void Request::start_parsing(const std::string requestbuffer)
     parseBody(requestbuffer);
 }
 
-void Request::RequestLineParsing(const std::string request)
+void Request::RequestLineParsing(const std::string& request)
 {
     const size_t request_line_end = request.find("\r\n");
     if (request_line_end == std::string::npos)
@@ -377,7 +406,8 @@ void Request::RequestLineParsing(const std::string request)
 
     const std::string parsed_method = request_line.substr(0, method_end);
     const bool supported_method =
-        parsed_method == "GET" || parsed_method == "POST" || parsed_method == "DELETE";
+        parsed_method == "GET" || parsed_method == "POST"
+        || parsed_method == "DELETE" || parsed_method == "HEAD";
     if (!supported_method)
     {
         throw std::runtime_error("Invalid method");
@@ -425,6 +455,9 @@ void Request::RequestLineParsing(const std::string request)
     {
         _requestLine.insert(std::make_pair("Path", request_target));
     }
+
+    method = _requestLine["Method"];
+    path = _requestLine["Path"];
 }
 
 void Request::QueryParsing(const std::string request_target)
@@ -446,7 +479,7 @@ void Request::QueryParsing(const std::string request_target)
     _requestLine.insert(std::make_pair("Query", query_string));
 }
 
-void Request::HeadersToMap(const std::string request)
+void Request::HeadersToMap(const std::string& request)
 {
     const size_t header_end = request.find("\r\n\r\n");
     if (header_end == std::string::npos)
@@ -596,52 +629,8 @@ void Request::parseBody(const std::string &buffer)
 
 void Request::MethodParsing(std::string method)
 {
-    const std::string request_path = _requestLine["Path"];
-    const std::vector<Locations> locations = _server.getLocations();
-    const size_t no_location = locations.size();
-    size_t best_location = no_location;
-
-    for (size_t i = 0; i < locations.size(); ++i)
-    {
-        const std::string location_path = locations[i].getPath();
-        if (location_path.empty())
-        {
-            continue;
-        }
-
-        const bool matches_prefix =
-            request_path.compare(0, location_path.size(), location_path) == 0;
-        if (!matches_prefix)
-        {
-            continue;
-        }
-
-        const bool exact_match = request_path.size() == location_path.size();
-        const bool location_ends_with_slash = location_path[location_path.size() - 1] == '/';
-        if (!exact_match && !location_ends_with_slash)
-        {
-            if (request_path[location_path.size()] != '/')
-            {
-                continue;
-            }
-        }
-
-        if (best_location == no_location)
-        {
-            best_location = i;
-        }
-        else if (location_path.size() > locations[best_location].getPath().size())
-        {
-            best_location = i;
-        }
-    }
-
-    if (best_location == no_location)
-    {
-        throw 404;
-    }
-
-    const std::vector<std::string> allowed_methods = locations[best_location].getAllowedMethods();
+    const Locations location = _server.findLocation(_requestLine["Path"], method);
+    const std::vector<std::string> allowed_methods = location.getAllowedMethods();
     if (allowed_methods.empty())
     {
         return;

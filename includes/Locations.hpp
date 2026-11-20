@@ -8,6 +8,7 @@ private:
     std::string _uploadStore; 
     std::string _cgiExtension;
     std::string _cgiPath;
+    size_t _maxBodySize; // Zero inherits the server limit.
     bool         _autoindex;
     std::vector<std::string> _allowed_methods;
     std::vector<std::string> _indexes;
@@ -24,6 +25,7 @@ public:
     std::string getUploadStore() const;
     std::string getCgiExtension() const;
     std::string getCgiPath() const;
+    size_t getBodySize() const;
     bool        getAutoIndex() const;
     std::vector<std::string> getAllowedMethods() const;
     std::vector<std::string> getIndexes() const;
@@ -34,6 +36,7 @@ public:
     void setUploadStore(const std::string& upload_path);
     void setCgiExtension(const std::string& cgiExtension);
     void setCgiPath(const std::string& cgiPath);
+    void setBodySize(size_t bodySize);
     void setAutoIndex(const bool &flag);
     void setAllowedMethod(const std::string& method);
     void setIndex(const std::string& index);

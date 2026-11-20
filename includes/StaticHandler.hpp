@@ -11,6 +11,11 @@ public:
                     const ServerConfig &srv, const Locations &loc);
 
 private:
+    bool    serveCachedFile(const std::string &filePath,
+                            const Request &req, Response &res);
+    void    fileResponse(const std::string &filePath, const std::string &content,
+                         const Request &req, Response &res) const;
+
     e_status serveFile(const std::string &filePath,
                        const Request &req,
                        Response &res);

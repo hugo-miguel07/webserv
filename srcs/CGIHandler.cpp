@@ -12,7 +12,7 @@
 
 
 static const int    CGI_TIMEOUT_MS = 5000;
-static const size_t CGI_MAX_OUTPUT = 10u * 1024u * 1024u;
+static const size_t CGI_MAX_OUTPUT = 128u * 1024u * 1024u;
 
 static time_t nowMs()
 {
@@ -54,81 +54,75 @@ static std::string trimCopy(const std::string &s)
     return (s.substr(b, e - b + 1));
 }
 
-static bool writeAllNonblocking(int fd, const std::string &data,
-                                time_t deadline)
+// A CGI can write output before reading all its input.
+static bool communicateCgi(int &inputFd, int &outputFd,
+                           const std::string &input, std::string &output,
+                           time_t deadline, bool &timedOut, bool &tooBig)
 {
-    size_t off = 0;
-    while (off < data.size())
+    size_t sent = 0;
+    char buffer[65536];
+    while (inputFd >= 0 || outputFd >= 0)
     {
-        time_t left = deadline - nowMs();
+        if (inputFd >= 0 && sent == input.size())
+            closeEnd(inputFd);
+        if (inputFd < 0 && outputFd < 0)
+            break;
+        const int left = static_cast<int>(deadline - nowMs());
         if (left <= 0)
-            return (false);
-        struct pollfd p;
-        p.fd = fd;
-        p.events = POLLOUT;
-        p.revents = 0;
-        int pr = poll(&p, 1, static_cast<int>(left));
-        if (pr < 0 && errno == EINTR)
-            continue;
-        if (pr <= 0)
-            return (false);
-        ssize_t n = write(fd, data.data() + off, data.size() - off);
-        if (n < 0)
         {
-            if (errno == EAGAIN || errno == EINTR)
-                continue;
-            return (false);
+            timedOut = true;
+            return false;
         }
-        off += static_cast<size_t>(n);
+        struct pollfd fds[2];
+        fds[0].fd = inputFd;
+        fds[0].events = POLLOUT;
+        fds[0].revents = 0;
+        fds[1].fd = outputFd;
+        fds[1].events = POLLIN;
+        fds[1].revents = 0;
+        const int ready = poll(fds, 2, left);
+        if (ready < 0 && errno == EINTR)
+            continue;
+        if (ready <= 0)
+        {
+            timedOut = ready == 0;
+            return false;
+        }
+        if (fds[1].revents & (POLLIN | POLLHUP))
+        {
+            const ssize_t n = read(outputFd, buffer, sizeof(buffer));
+            if (n > 0)
+            {
+                if (static_cast<size_t>(n) > CGI_MAX_OUTPUT - output.size())
+                {
+                    tooBig = true;
+                    return false;
+                }
+                output.append(buffer, static_cast<size_t>(n));
+            }
+            else if (n == 0)
+                closeEnd(outputFd);
+            else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                return false;
+        }
+        if (fds[1].revents & (POLLERR | POLLNVAL))
+            return false;
+        if (fds[0].revents & POLLOUT)
+        {
+            const size_t remaining = input.size() - sent;
+            const size_t count = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+            const ssize_t n = write(inputFd, input.data() + sent, count);
+            if (n > 0)
+                sent += static_cast<size_t>(n);
+            else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                return false;
+        }
+        if (fds[0].revents & (POLLERR | POLLHUP | POLLNVAL))
+            return false;
     }
-    return (true);
+    return sent == input.size();
 }
 
-static std::string readAllWithDeadline(int fd, time_t deadline,
-                                       bool &timedOut, bool &tooBig)
-{
-    std::string out;
-    char buf[4096];
-    for (;;)
-    {
-        if (out.size() > CGI_MAX_OUTPUT)
-        {
-            tooBig = true;
-            break;
-        }
-        int left = static_cast<int>(deadline - nowMs());
-        if (left <= 0)
-        {
-            timedOut = true;
-            break;
-        }
-        struct pollfd p;
-        p.fd = fd;
-        p.events = POLLIN;
-        p.revents = 0;
-        int pr = poll(&p, 1, left);
-        if (pr < 0 && errno == EINTR)
-            continue;
-        if (pr == 0)
-        {
-            timedOut = true;
-            break;
-        }
-        if (pr < 0)
-            break;
-        ssize_t n = read(fd, buf, sizeof(buf));
-        if (n < 0)
-        {
-            if (errno == EAGAIN || errno == EINTR)
-                continue;
-            break;
-        }
-        if (n == 0)
-            break;
-        out.append(buf, static_cast<size_t>(n));
-    }
-    return (out);
-}
 
 static bool parseCgiOutput(const std::string &raw, Response &res)
 {
@@ -291,14 +285,15 @@ Handler::e_status CGIHandler::handle(const Request &req, Response &res,
     }
     time_t deadline = nowMs() + timeoutMs;
 
-    bool fed = writeAllNonblocking(_stdinPipe[1], req.body, deadline);
-    closeEnd(_stdinPipe[1]);
-
     bool timedOut = false;
     bool tooBig = false;
-    std::string output = readAllWithDeadline(_stdoutPipe[0], deadline,
-                                             timedOut, tooBig);
+    std::string output;
+    bool fed = communicateCgi(_stdinPipe[1], _stdoutPipe[0], req.body,
+                              output, deadline, timedOut, tooBig);
+    closeEnd(_stdinPipe[1]);
     closeEnd(_stdoutPipe[0]);
+    if (!fed)
+        kill(_cgiPid, SIGKILL);
 
     int status = 0;
     int exitCode = 0;
@@ -383,6 +378,8 @@ char **CGIHandler::buildEnv(const std::string &interpreter,
     _envStore.push_back("SERVER_PORT=");
     _envStore.push_back("REQUEST_METHOD=" + req.method);
     _envStore.push_back("QUERY_STRING=" + req.query);
+    _envStore.push_back("REQUEST_URI=" + req.path
+                        + (req.query.empty() ? "" : "?" + req.query));
     _envStore.push_back("PATH_INFO=" + req.path);
     _envStore.push_back("SCRIPT_NAME=" + req.path);
     _envStore.push_back("SCRIPT_FILENAME=" + scriptPath);
@@ -397,15 +394,21 @@ char **CGIHandler::buildEnv(const std::string &interpreter,
     if (!ctype.empty())
         _envStore.push_back("CONTENT_TYPE=" + ctype);
 
-    std::string ua = req.getHeader("user-agent");
-    if (!ua.empty())
-        _envStore.push_back("HTTP_USER_AGENT=" + ua);
-    std::string accept = req.getHeader("accept");
-    if (!accept.empty())
-        _envStore.push_back("HTTP_ACCEPT=" + accept);
-    std::string cookie = req.getHeader("cookie");
-    if (!cookie.empty())
-        _envStore.push_back("HTTP_COOKIE=" + cookie);
+    for (std::map<std::string, std::string>::const_iterator it = req.headers.begin();
+         it != req.headers.end(); ++it)
+    {
+        const std::string name = toLowerCopy(it->first);
+        if (name == "content-length" || name == "content-type")
+            continue;
+        std::string environmentName = "HTTP_";
+        for (size_t i = 0; i < name.size(); ++i)
+        {
+            const unsigned char character = static_cast<unsigned char>(name[i]);
+            environmentName += character == '-' ? '_'
+                : static_cast<char>(std::toupper(character));
+        }
+        _envStore.push_back(environmentName + "=" + it->second);
+    }
 
     char **env = new char *[_envStore.size() + 1];
     for (size_t i = 0; i < _envStore.size(); ++i)

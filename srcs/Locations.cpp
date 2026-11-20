@@ -1,8 +1,18 @@
 #include "Locations.hpp"
 
-Locations::Locations() : _path(""), _root(""), _uploadStore(""), _cgiExtension(""), _autoindex(false), _allowed_methods(), _indexes(), _return() {}
+Locations::Locations() : _path(""), _root(""), _uploadStore(""), _cgiExtension(""), _maxBodySize(0), _autoindex(false), _allowed_methods(), _indexes(), _return() {}
 
 Locations::~Locations() {}
+
+size_t Locations::getBodySize() const
+{
+    return (_maxBodySize);
+}
+
+void Locations::setBodySize(size_t bodySize)
+{
+    _maxBodySize = bodySize;
+}
 
 std::string Locations::getPath() const 
 {
@@ -115,6 +125,7 @@ void Locations::erase()
     _uploadStore = "";
     _cgiExtension = "";
     _cgiPath = "";
+    _maxBodySize = 0;
     _autoindex = false;
     _indexes.clear();
     _allowed_methods.clear();

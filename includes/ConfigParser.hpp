@@ -31,7 +31,7 @@ public:
     void handleRootDirective(const std::vector<Token>& tokens, size_t &i, bool is_location);
     void handleIndexDirective(const std::vector<Token>& tokens, size_t &i, bool is_location);
     void handleServerNameDirective(const std::vector<Token>& tokens, size_t &i);
-    void handleClientMaxBodySizeDirective(const std::vector<Token>& tokens, size_t &i);
+    void handleClientMaxBodySizeDirective(const std::vector<Token>& tokens, size_t &i, bool is_location = false);
     void handleErrorPageDirective(const std::vector<Token>& tokens, size_t &i);
     void handleLocationDirective(const std::vector<Token>& tokens, size_t &i);
     void handleAllowMethodsDirective(const std::vector<Token>& tokens, size_t &i);

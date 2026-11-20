@@ -20,6 +20,13 @@ class Request: public Client {
         bool                                _finisedHeader;
         bool                                _hasContent;
         bool                                _hasTransferEncoding;
+        size_t                              _headerSearchOffset;
+        size_t                              _bodyStart;
+        enum ChunkState { CHUNK_SIZE, CHUNK_DATA, CHUNK_TRAILERS, CHUNK_DONE };
+        ChunkState                          _chunkState;
+        size_t                              _chunkPosition;
+        size_t                              _chunkSize;
+        size_t                              _chunkTotal;
         ServerConfig                        _server;
         std::string                         _serverName;
         std::map<std::string, std::string>  _requestLine;
@@ -45,17 +52,18 @@ class Request: public Client {
         const ServerConfig &getServerConfig() const;
 
         /*Checkers*/
-        bool    checkHeader(const std::string requestBuffer);
-        void    readingBody(const std::string requestBuffer);
-        bool    checkingBody_framing(const std::string requestBuffer);
-        bool    checkingBody_chuncked(const std::string requestBuffer);
+        bool    checkHeader(const std::string& requestBuffer);
+        void    readingBody(const std::string& requestBuffer);
+        bool    checkingBody_framing(const std::string& requestBuffer);
+        bool    checkingBody_chuncked(const std::string& requestBuffer,
+                                     size_t maxBodySize = static_cast<size_t>(-1));
 
         /*Parsing*/
-        void    start_parsing(const std::string requestBuffer);
+        void    start_parsing(const std::string& requestBuffer);
         void    QueryParsing(std::string requestTarget);
-        void    RequestLineParsing(const std::string requestBuffer);
+        void    RequestLineParsing(const std::string& requestBuffer);
         void    MethodParsing(std::string method);
-        void    HeadersToMap(const std::string requestBuffer);
+        void    HeadersToMap(const std::string& requestBuffer);
         void    parseBody(const std::string& buffer);
         void    HostParsing(std::string value);
         void    parseChunkedBody(const std::string& buffer, size_t pos);

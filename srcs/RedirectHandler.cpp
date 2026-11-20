@@ -16,7 +16,7 @@ Handler::e_status RedirectHandler::handle(const Request &req, Response &res,
     int code = 0;
     std::string target;
 
-    // Find the first redirect entry in the map
+    // Find the configured return entry.
     for (std::map<int, std::string>::const_iterator it = returnMap.begin(); it != returnMap.end(); ++it)
     {
         code = it->first;
@@ -27,6 +27,19 @@ Handler::e_status RedirectHandler::handle(const Request &req, Response &res,
     if (target.empty() || code == 0)
     {
         buildError(res, 500);
+        return (DONE);
+    }
+
+    if (code >= 200 && code < 300)
+    {
+        res.clear();
+        res.setStatus(code, Response::getReasonPhrase(code));
+        if (code != 204)
+        {
+            res.setHeader("Content-Type", "text/plain");
+            if (req.method != "HEAD")
+                res.setBody(target);
+        }
         return (DONE);
     }
 

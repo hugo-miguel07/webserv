@@ -70,24 +70,10 @@ bool Server::isServerFd(int fd)
     return false;
 }
 
-Locations Server::findLocation(const ServerConfig &config, const std::string &path) const
+Locations Server::findLocation(const ServerConfig &config, const std::string &path,
+                                const std::string &method) const
 {
-    std::vector<Locations> locations = config.getLocations();
-    size_t best = locations.size();
-    for (size_t i = 0; i < locations.size(); ++i)
-    {
-        const std::string prefix = locations[i].getPath();
-        if (prefix.empty() || path.compare(0, prefix.size(), prefix) != 0)
-            continue;
-        if (path.size() != prefix.size() && prefix[prefix.size() - 1] != '/'
-            && path[prefix.size()] != '/')
-            continue;
-        if (best == locations.size() || prefix.size() > locations[best].getPath().size())
-            best = i;
-    }
-    if (best == locations.size())
-        throw 404;
-    return locations[best];
+    return config.findLocation(path, method);
 }
 
 void Server::enablePollOut()
@@ -108,8 +94,15 @@ void Server::run()
 {
     while (g_running)
     {
+        const std::time_t now = std::time(NULL);
+        for (std::map<int, std::time_t>::const_iterator it = _drainingClients.begin();
+             it != _drainingClients.end(); ++it)
+            if (it->second != 0 && it->second <= now)
+                _removeClients.push_back(it->first);
+        Server::removeClients();
         Server::enablePollOut();
-        int ret = poll(_pollfds.data(), _pollfds.size(), -1);
+        int ret = poll(_pollfds.data(), _pollfds.size(),
+                       _drainingClients.empty() ? -1 : 1000);
         if (ret == -1)
         {
             if (g_running)
@@ -154,7 +147,11 @@ void Server::removeClients()
             if (it->getFd() == *remove_it)
             {
                 close(it->getFd());
-                _clients.erase(it);
+                _requests.erase(it->getFd());
+                _drainingClients.erase(it->getFd());
+                if (&(*it) != &_clients.back())
+                    it->swap(_clients.back());
+                _clients.pop_back();
                 break;
             }
         for(std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
@@ -174,7 +171,7 @@ void Server::handleRead(Client &client)
         return;
     }
 
-    char read_buffer[4096];
+    char read_buffer[65536];
     const ssize_t received_bytes = recv(client.getFd(), read_buffer, sizeof(read_buffer), 0);
 
     if (received_bytes == 0)
@@ -196,26 +193,32 @@ void Server::handleRead(Client &client)
         return;
     }
 
+    // Discard rejected input after sending 413 instead of resetting the socket.
+    if (_drainingClients.count(client.getFd()) != 0)
+        return;
+
     client.appendRequest(read_buffer, received_bytes);
 
-    Request request(client.getListener().configs);
+    Request &request = _requests.find(client.getFd())->second;
     Response response;
     bool request_parsed = false;
 
     try
     {
         const std::string &request_buffer = client.getRequestBuffer();
-        const bool headers_complete = request.checkHeader(request_buffer);
-        if (!headers_complete)
+        if (request.headers.empty())
         {
-            return;
+            if (!request.checkHeader(request_buffer))
+                return;
+            request.HeadersToMap(request_buffer);
+            request.readingBody(request_buffer);
+            request.RequestLineParsing(request_buffer);
         }
 
-        request.HeadersToMap(request_buffer);
-        request.readingBody(request_buffer);
-
         const ServerConfig &server_config = request.getServerConfig();
-        const size_t max_body_size = server_config.getBodySize();
+        const Locations location = findLocation(server_config, request.path, request.method);
+        const size_t max_body_size = location.getBodySize() == 0
+            ? server_config.getBodySize() : location.getBodySize();
         if (request.getContentLength() > max_body_size)
         {
             throw 413;
@@ -232,7 +235,7 @@ void Server::handleRead(Client &client)
 
         if (request.getTransferEncodingStatus())
         {
-            const bool body_complete = request.checkingBody_chuncked(request_buffer);
+            const bool body_complete = request.checkingBody_chuncked(request_buffer, max_body_size);
             if (!body_complete)
             {
                 return;
@@ -246,8 +249,6 @@ void Server::handleRead(Client &client)
         {
             throw 413;
         }
-
-        const Locations location = findLocation(server_config, request.path);
 
         StaticHandler static_handler;
         RedirectHandler redirect_handler;
@@ -273,8 +274,11 @@ void Server::handleRead(Client &client)
             selected_handler = &delete_handler;
         }
 
+        // Handlers must enforce the same limit as request framing.
+        ServerConfig handler_config = server_config;
+        handler_config.setBodySize(max_body_size);
         const Handler::e_status handler_status =
-            selected_handler->handle(request, response, server_config, location);
+            selected_handler->handle(request, response, handler_config, location);
 
         const bool handler_finished = handler_status == Handler::DONE;
         const bool response_has_error = response.statusCode >= 400;
@@ -291,7 +295,7 @@ void Server::handleRead(Client &client)
 
         if (status_code == 405)
         {
-            const Locations location = findLocation(request.getServerConfig(), request.path);
+            const Locations location = findLocation(request.getServerConfig(), request.path, request.method);
             const std::vector<std::string> allowed_methods = location.getAllowedMethods();
             std::string allow_header;
 
@@ -320,9 +324,13 @@ void Server::handleRead(Client &client)
         response.setError(status_code);
     }
 
+    if (response.statusCode == 413)
+        _drainingClients[client.getFd()] = 0;
+    client.clearRequestBuffer();
+    _requests.erase(client.getFd());
     response.setHeader("Connection", "close");
-    const std::string serialized_response = response.toString();
-    client.appendResponse(serialized_response.data(), serialized_response.size());
+    std::string serialized_response = response.toString();
+    client.setResponseBuffer(serialized_response);
     client.setResponseOffset(0);
     client.setResponseReady(true);
 }
@@ -345,7 +353,17 @@ void Server::handleWrite(Client &client)
     {
         client.setResponseReady(false);
         Server::disablePollOut(client.getFd());
-        _removeClients.push_back(client.getFd());
+        if (_drainingClients.count(client.getFd()) != 0)
+        {
+            // FIN makes the response readable immediately; keep receiving briefly
+            // so bytes already in flight cannot turn the close into a TCP reset.
+            shutdown(client.getFd(), SHUT_WR);
+            _drainingClients[client.getFd()] = std::time(NULL) + 2;
+            std::string empty;
+            client.setResponseBuffer(empty);
+        }
+        else
+            _removeClients.push_back(client.getFd());
     }
 }
 
@@ -389,6 +407,7 @@ void Server::acceptClient(int fd)
         throw std::runtime_error("Listener not found");
 
     this->_clients.push_back(Client(client_fd, listener));
+    _requests.insert(std::make_pair(client_fd, Request(listener->configs)));
 
     struct pollfd pfd;
 
@@ -396,10 +415,6 @@ void Server::acceptClient(int fd)
     pfd.events = POLLIN;
     pfd.revents = 0;
     this->_pollfds.push_back(pfd);
-    std::cout << "clients: " << _clients.size() << std::endl;
-    std::cout << "poll: " << _pollfds.size() << std::endl;
-
-    std::cout << "Client created!" << std::endl;
 }
 
 Client* Server::getClientById(int fd)
@@ -433,6 +448,8 @@ void Server::shut_down()
         }
     }
     this->_clients.clear();
+    _requests.clear();
+    _drainingClients.clear();
     
     for (std::vector<struct pollfd>::iterator it = _pollfds.begin(); it != _pollfds.end(); ++it)
     {

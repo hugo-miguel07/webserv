@@ -76,3 +76,49 @@ std::vector<Locations>  ServerConfig::getLocations() const
     return (_locations);
 }
 
+Locations ServerConfig::findLocation(const std::string& path, const std::string& method) const
+{
+    size_t prefix_match = _locations.size();
+    size_t extension_match = _locations.size();
+    for (size_t i = 0; i < _locations.size(); ++i)
+    {
+        const std::string pattern = _locations[i].getPath();
+        if (pattern.empty())
+            continue;
+        if (pattern[0] == '.')
+        {
+            // Extension rules execute CGI for POST; GET keeps its prefix route.
+            if (method == "POST" && path.size() >= pattern.size()
+                && path.compare(path.size() - pattern.size(), pattern.size(), pattern) == 0
+                && (extension_match == _locations.size()
+                    || pattern.size() > _locations[extension_match].getPath().size()))
+                extension_match = i;
+            continue;
+        }
+        if (path.compare(0, pattern.size(), pattern) != 0)
+            continue;
+        if (path.size() != pattern.size() && pattern[pattern.size() - 1] != '/'
+            && path[pattern.size()] != '/')
+            continue;
+        if (prefix_match == _locations.size()
+            || pattern.size() > _locations[prefix_match].getPath().size())
+            prefix_match = i;
+    }
+    if (extension_match != _locations.size())
+    {
+        Locations result = _locations[extension_match];
+        if (prefix_match != _locations.size())
+        {
+            const Locations &parent = _locations[prefix_match];
+            if (result.getRoot().empty())
+                result.setRoot(parent.getRoot());
+            if (result.getBodySize() == 0)
+                result.setBodySize(parent.getBodySize());
+        }
+        return result;
+    }
+    if (prefix_match == _locations.size())
+        throw 404;
+    return _locations[prefix_match];
+}
+

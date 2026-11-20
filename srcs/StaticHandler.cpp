@@ -3,6 +3,35 @@
 #include <fstream>
 #include <sstream>
 #include <cctype>
+#include <sys/stat.h>
+
+namespace
+{
+const size_t CACHE_MAX_ENTRIES = 32;
+const size_t CACHE_MAX_FILE_SIZE = 256u * 1024u;
+
+struct CachedFile
+{
+    struct stat metadata;
+    std::string content;
+};
+
+// Shared by the short-lived handlers; at most 8 MiB of file contents.
+std::map<std::string, CachedFile> fileCache;
+
+bool sameFile(const struct stat &a, const struct stat &b)
+{
+    return a.st_dev == b.st_dev && a.st_ino == b.st_ino
+        && a.st_size == b.st_size && a.st_mode == b.st_mode
+        && a.st_uid == b.st_uid && a.st_gid == b.st_gid
+        && a.st_mtime == b.st_mtime && a.st_ctime == b.st_ctime
+#if defined(__linux__)
+        && a.st_mtim.tv_nsec == b.st_mtim.tv_nsec
+        && a.st_ctim.tv_nsec == b.st_ctim.tv_nsec
+#endif
+        ;
+}
+}
 
 
 StaticHandler::StaticHandler() {}
@@ -32,6 +61,21 @@ Handler::e_status StaticHandler::handle(const Request &req, Response &res,
         return (DONE);
     }
 
+    // A cached regular file needs one metadata check, without reopening it.
+    if (serveCachedFile(filePath, req, res))
+        return (DONE);
+    const std::vector<std::string> indexes = loc.getIndexes().empty()
+        ? srv.getIndex() : loc.getIndexes();
+    // With several indexes, preserve their priority by checking them in order.
+    if (!req.path.empty() && req.path[req.path.size() - 1] == '/'
+        && indexes.size() == 1)
+    {
+        const std::string candidate = filePath
+            + (filePath[filePath.size() - 1] == '/' ? "" : "/") + indexes[0];
+        if (serveCachedFile(candidate, req, res))
+            return (DONE);
+    }
+
     if (isDirectory(filePath))
     {
         if (!req.path.empty() && req.path[req.path.size() - 1] != '/')
@@ -56,7 +100,7 @@ Handler::e_status StaticHandler::handle(const Request &req, Response &res,
         if (loc.getAutoIndex())
             return (serveDirectoryListing(req, res, filePath));
 
-        buildError(res, 403);
+        buildError(res, 404);
         return (DONE);
     }
 
@@ -72,6 +116,13 @@ Handler::e_status StaticHandler::serveFile(const std::string &filePath,
                                            const Request &req,
                                            Response &res)
 {
+    if (serveCachedFile(filePath, req, res))
+        return (DONE);
+
+    struct stat before;
+    const bool cacheable = stat(filePath.c_str(), &before) == 0
+        && S_ISREG(before.st_mode) && before.st_size >= 0
+        && static_cast<size_t>(before.st_size) <= CACHE_MAX_FILE_SIZE;
     std::ifstream file(filePath.c_str(), std::ios::in | std::ios::binary);
     if (!file.is_open())
     {
@@ -89,6 +140,44 @@ Handler::e_status StaticHandler::serveFile(const std::string &filePath,
 
     std::string content = buffer.str();
 
+    struct stat after;
+    if (cacheable && stat(filePath.c_str(), &after) == 0
+        && sameFile(before, after)
+        && content.size() == static_cast<size_t>(after.st_size))
+    {
+        if (fileCache.size() >= CACHE_MAX_ENTRIES)
+            fileCache.erase(fileCache.begin());
+        CachedFile &entry = fileCache[filePath];
+        entry.metadata = after;
+        entry.content = content;
+    }
+
+    fileResponse(filePath, content, req, res);
+    return (DONE);
+}
+
+bool StaticHandler::serveCachedFile(const std::string &filePath,
+                                    const Request &req, Response &res)
+{
+    std::map<std::string, CachedFile>::iterator it = fileCache.find(filePath);
+    if (it == fileCache.end())
+        return false;
+    struct stat current;
+    if (stat(filePath.c_str(), &current) != 0
+        || !S_ISREG(current.st_mode) || !sameFile(it->second.metadata, current))
+    {
+        fileCache.erase(it);
+        return false;
+    }
+    fileResponse(filePath, it->second.content, req, res);
+    return true;
+}
+
+void StaticHandler::fileResponse(const std::string &filePath,
+                                 const std::string &content,
+                                 const Request &req, Response &res) const
+{
+
     res.clear();
     res.setStatus(200, "OK");
     res.setBody(content);
@@ -101,7 +190,6 @@ Handler::e_status StaticHandler::serveFile(const std::string &filePath,
         res.setHeader("Content-Length", len.str());
         res.setBody("");
     }
-    return (DONE);
 }
 
 bool StaticHandler::serveIndex(const std::string &dirPath,

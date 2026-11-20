@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run `make && python3 test/integration_test.py` to exercise real HTTP requests."""
 
+import http.client
+import os
 import signal
 import socket
 import subprocess
@@ -40,6 +42,8 @@ def main():
         (root / "files/private").mkdir()
         (root / "files/private/secret.txt").write_bytes(b"protected")
         (root / "index.html").write_bytes(b"main index")
+        (root / "priority").mkdir()
+        (root / "priority/fallback.html").write_bytes(b"fallback index")
         (root / "upload.html").write_bytes(b"upload page")
         (work / "other" / "index.html").write_bytes(b"other virtual host")
         large = b"static response\n" * 200000
@@ -69,6 +73,7 @@ server {
     index index.html;
     client_max_body_size 2K;
     location / { allow_methods GET; }
+    location /priority { allow_methods GET; index first.html fallback.html; }
     location /old { return 302 /new; }
     location /upload { allow_methods POST; upload_store %s/files; }
     location /files { allow_methods GET DELETE; autoindex on; }
@@ -134,8 +139,43 @@ server {
 
                 status, _, body = request("GET", "/")
                 check(status == 200 and body == b"main index", "static index through handleRead")
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                try:
+                    connection.request("HEAD", "/", headers={"Host": "localhost"})
+                    response = connection.getresponse()
+                    check(response.status == 405 and response.getheader("Allow") == "GET",
+                          "HEAD is recognized and rejected by the GET-only route with 405")
+                finally:
+                    connection.close()
                 status, _, body = request("GET", "/", host="other.test:%d" % port)
                 check(status == 200 and body == b"other virtual host", "virtual host selects its own configuration")
+                index = root / "index.html"
+                metadata = index.stat()
+                index.write_bytes(b"next index")
+                os.utime(index, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+                status, _, body = request("GET", "/")
+                check(status == 200 and body == b"next index",
+                      "cached index notices a same-size rewrite with preserved mtime")
+                replacement = root / "replacement.html"
+                replacement.write_bytes(b"swap index")
+                os.utime(replacement, ns=(metadata.st_atime_ns, metadata.st_mtime_ns))
+                replacement.replace(index)
+                status, _, body = request("GET", "/")
+                check(status == 200 and body == b"swap index", "cached index notices atomic replacement")
+                index.unlink()
+                status, _, _ = request("GET", "/")
+                check(status == 404, "deleted cached index is no longer served")
+                index.write_bytes(b"main index")
+                status, _, body = request("GET", "/")
+                check(status == 200 and body == b"main index", "recreated index is served immediately")
+                status, _, body = request("GET", "/priority/")
+                check(status == 200 and body == b"fallback index", "fallback index can be cached")
+                (root / "priority/first.html").write_bytes(b"first index")
+                status, _, body = request("GET", "/priority/")
+                check(status == 200 and body == b"first index", "new higher-priority index overrides cached fallback")
+                (root / "priority/first.html").unlink()
+                status, _, body = request("GET", "/priority/")
+                check(status == 200 and body == b"fallback index", "removed preferred index restores fallback")
                 status, _, body = request("GET", "/large.txt")
                 check(status == 200 and body == large, "large response is sent completely")
                 status, headers, _ = request("GET", "/old")

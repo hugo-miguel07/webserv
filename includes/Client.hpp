@@ -23,6 +23,9 @@ public:
     const Listener&     getListener() const;
     void                appendRequest(const char *buffer, int total_bytes);
     void                appendResponse(const char *buffer, int total_bytes);
+    void                clearRequestBuffer();
+    void                setResponseBuffer(std::string &buffer);
+    void                swap(Client &other);
     const std::string&  getResponseBuffer() const;
     const std::string&  getRequestBuffer() const;
     void                setResponseOffset(size_t value);

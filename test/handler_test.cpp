@@ -153,11 +153,17 @@ int main()
         expect(res.statusCode == 301 && res.body.empty(),
                "redirect: HEAD has Location but no body");
 
+        Locations fixed = makeLoc("/post_body");
+        fixed.setReturn(200, "OK");
+        redirecter.handle(makeReq("POST", "/post_body", ""), res, srv, fixed);
+        expect(res.statusCode == 200 && res.body == "OK" && !res.hasLocation(),
+               "return: 200 returns fixed body without redirect");
+
         Locations bad = makeLoc("/old");
-        bad.setReturn(200, "/new");
+        bad.setReturn(400, "/new");
         redirecter.handle(makeReq("GET", "/old", ""), res, srv, bad);
         expect(res.statusCode == 500,
-               "redirect: non-3xx configured code -> 500");
+               "redirect: unsupported configured code -> 500");
 
         Locations unset = makeLoc("/old");
         redirecter.handle(makeReq("GET", "/old", ""), res, srv, unset);
@@ -209,7 +215,7 @@ int main()
 
         staticHandler.handle(makeReq("GET", "/emptydir/", ""), res, srv,
                              makeLoc("/emptydir"));
-        expect(res.statusCode == 403, "static: autoindex off, no index -> 403");
+        expect(res.statusCode == 404, "static: autoindex off, no index -> 404");
 
         staticHandler.handle(makeReq("GET", "/missing.txt", ""), res, srv,
                              makeLoc("/"));

@@ -24,6 +24,7 @@ public:
     std::vector<std::string>    getServerName() const;
     std::map<int, std::string>  getErrorPages() const;
     std::vector<Locations>      getLocations() const;
+    Locations                   findLocation(const std::string& path, const std::string& method) const;
     void                        addLocation(const Locations& location);
 
     void setPort(const int& port);
